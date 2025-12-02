@@ -290,7 +290,7 @@ export default function PartyDetail() {
       </div>
       <div className="flex items-center gap-2">
         {doc.filePath && (
-          <Button variant="ghost" size="sm" asChild>
+          <Button variant="ghost" size="sm" asChild data-testid={`button-download-doc-${doc.id}`}>
             <a href={getDocumentDownloadUrl(doc.id)} download>
               <Download className="h-4 w-4 mr-2" /> Download
             </a>
