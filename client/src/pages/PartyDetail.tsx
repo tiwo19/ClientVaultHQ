@@ -123,6 +123,8 @@ export default function PartyDetail() {
   const [activityType, setActivityType] = useState<string>("Call");
   const [activityContent, setActivityContent] = useState("");
   const [activityDate, setActivityDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [activityImage, setActivityImage] = useState<File | null>(null);
+  const [activityImagePreview, setActivityImagePreview] = useState<string | null>(null);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
@@ -252,12 +254,26 @@ export default function PartyDetail() {
     if (!id || !activityContent.trim()) return;
 
     try {
+      let imageUrl: string | null = null;
+      
+      if (activityImage) {
+        const uploadedDoc = await addDocument({
+          partyId: id,
+          name: `Screenshot_${format(new Date(), "yyyy-MM-dd_HHmmss")}.png`,
+          type: "Image",
+          category: "Other",
+          file: activityImage
+        });
+        imageUrl = `/uploads/${activityImage.name}`;
+      }
+      
       await addActivity({
         partyId: id,
         agreementId: null,
         type: activityType,
         content: activityContent,
-        date: activityDate
+        date: activityDate,
+        imageUrl
       });
       
       setIsLogActivityOpen(false);
@@ -268,10 +284,38 @@ export default function PartyDetail() {
     }
   };
 
+  const handleActivityPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        const blob = items[i].getAsFile();
+        if (blob) {
+          const timestamp = format(new Date(), "yyyyMMdd_HHmmss");
+          const file = new File([blob], `screenshot_${timestamp}.png`, { type: "image/png" });
+          setActivityImage(file);
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            setActivityImagePreview(event.target?.result as string);
+          };
+          reader.readAsDataURL(blob);
+          toast({ title: "Image Pasted", description: "Screenshot attached to activity." });
+        }
+        break;
+      }
+    }
+  };
+
+  const removeActivityImage = () => {
+    setActivityImage(null);
+    setActivityImagePreview(null);
+  };
+
   const resetActivityForm = () => {
     setActivityType("Call");
     setActivityContent("");
     setActivityDate(format(new Date(), "yyyy-MM-dd"));
+    setActivityImage(null);
+    setActivityImagePreview(null);
   };
 
   const handleDeleteDoc = async (docId: string) => {
@@ -687,12 +731,44 @@ export default function PartyDetail() {
                         <Textarea 
                           value={activityContent} 
                           onChange={e => setActivityContent(e.target.value)} 
+                          onPaste={handleActivityPaste}
                           required 
-                          placeholder="Describe the interaction or note..."
+                          placeholder="Describe the interaction or note... (Paste screenshots with Ctrl+V)"
                           rows={4}
                           data-testid="input-activity-content"
                         />
                       </div>
+                      
+                      {activityImagePreview && (
+                        <div className="space-y-2">
+                          <Label>Attached Screenshot</Label>
+                          <div className="relative border rounded-lg p-2 bg-muted/50">
+                            <img 
+                              src={activityImagePreview} 
+                              alt="Screenshot preview" 
+                              className="max-h-48 rounded object-contain mx-auto"
+                            />
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              className="absolute top-2 right-2"
+                              onClick={removeActivityImage}
+                              data-testid="button-remove-activity-image"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {!activityImagePreview && (
+                        <div className="text-xs text-muted-foreground text-center py-2 border border-dashed rounded-lg">
+                          <Upload className="h-4 w-4 inline-block mr-1" />
+                          Paste a screenshot (Ctrl+V) in the text area above
+                        </div>
+                      )}
+                      
                       <DialogFooter>
                         <Button type="submit" disabled={!activityContent.trim()} data-testid="button-submit-activity">
                           Log Activity

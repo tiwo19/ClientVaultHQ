@@ -175,6 +175,7 @@ export interface ActivityData {
   type: string;
   content: string;
   date: string;
+  imageUrl?: string | null;
 }
 
 export async function createActivity(activityData: ActivityData) {
