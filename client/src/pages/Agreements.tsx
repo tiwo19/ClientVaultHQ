@@ -1,5 +1,5 @@
 import { useData } from "@/lib/data";
-import { Agreement, PerformanceStatus, AgreementType } from "@/lib/mockData";
+import type { Agreement } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
@@ -13,7 +13,9 @@ import { Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 
-const STATUS_COLUMNS: PerformanceStatus[] = [
+type AgreementType = "Loan" | "LOI" | "JV" | "Lease" | "Other";
+
+const STATUS_COLUMNS = [
   "Draft", 
   "Sent", 
   "Executed", 

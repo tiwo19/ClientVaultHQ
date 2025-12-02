@@ -1,7 +1,7 @@
 import { createContext, useContext, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "./api";
-import type { Party, Agreement, Document, Person, Activity } from "./mockData";
+import type { Party, Agreement, Document, Person, Activity } from "@shared/schema";
 
 interface DataContextType {
   // Queries

@@ -1,11 +1,13 @@
-import { agreements, parties, Agreement, EnforcementStage } from "@/lib/mockData";
+import { useData } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { useMemo } from "react";
-import { AlertTriangle, Gavel } from "lucide-react";
+import { AlertTriangle, Gavel, Loader2 } from "lucide-react";
+import type { Agreement } from "@shared/schema";
 
-const ENFORCEMENT_COLUMNS: EnforcementStage[] = [
+const ENFORCEMENT_COLUMNS = [
+  "NeedsReview",
   "FriendlyReminder", 
   "Dunning1", 
   "Dunning2", 
@@ -14,24 +16,42 @@ const ENFORCEMENT_COLUMNS: EnforcementStage[] = [
   "SuitFiled", 
   "Judgment", 
   "PostJudgmentCollection"
-];
+] as const;
+
+type EnforcementStage = typeof ENFORCEMENT_COLUMNS[number];
 
 export default function Enforcement() {
+  const { agreements, parties, isLoading } = useData();
+
   const agreementsInEnforcement = useMemo(() => {
     const grouped: Record<string, Agreement[]> = {};
     ENFORCEMENT_COLUMNS.forEach(s => grouped[s] = []);
     
     agreements.forEach(a => {
-      // Include if in default or has an enforcement stage set (and not None)
-      if ((a.performanceStatus === 'InDefault' || a.enforcementStage !== 'None') && grouped[a.enforcementStage]) {
-        grouped[a.enforcementStage].push(a);
+      const stage = a.enforcementStage as string;
+      if (a.performanceStatus === 'InDefault') {
+        if (stage === 'None' || !grouped[stage]) {
+          grouped["NeedsReview"].push(a);
+        } else {
+          grouped[stage].push(a);
+        }
+      } else if (stage !== 'None' && grouped[stage]) {
+        grouped[stage].push(a);
       }
     });
     return grouped;
-  }, []);
+  }, [agreements]);
 
   const getPartyName = (id: string) => parties.find(p => p.id === id)?.name || "Unknown Party";
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col">
@@ -48,10 +68,10 @@ export default function Enforcement() {
       <div className="flex-1 overflow-x-auto pb-4">
         <div className="flex gap-4 min-w-max h-full">
           {ENFORCEMENT_COLUMNS.map(stage => (
-            <div key={stage} className="w-80 flex flex-col bg-muted/30 rounded-lg border border-border/50 h-full">
+            <div key={stage} className="w-80 flex flex-col bg-muted/30 rounded-lg border border-border/50 h-full" data-testid={`column-${stage}`}>
               <div className="p-3 border-b border-border/50 bg-muted/50 font-medium text-sm text-muted-foreground uppercase tracking-wider flex justify-between items-center">
                 {stage.replace(/([A-Z])/g, ' $1').trim()}
-                <span className="bg-background text-foreground px-2 py-0.5 rounded-full text-xs border">
+                <span className="bg-background text-foreground px-2 py-0.5 rounded-full text-xs border" data-testid={`count-${stage}`}>
                   {agreementsInEnforcement[stage].length}
                 </span>
               </div>
@@ -59,7 +79,7 @@ export default function Enforcement() {
               <div className="p-3 space-y-3 overflow-y-auto flex-1">
                 {agreementsInEnforcement[stage].map(agreement => (
                   <Link key={agreement.id} href={`/agreements/${agreement.id}`}>
-                    <Card className="cursor-pointer hover:shadow-md transition-shadow border-l-4 border-l-destructive">
+                    <Card className="cursor-pointer hover:shadow-md transition-shadow border-l-4 border-l-destructive" data-testid={`card-agreement-${agreement.id}`}>
                       <CardHeader className="p-3 pb-0">
                         <div className="flex justify-between items-start mb-1">
                           <Badge variant="destructive" className="text-[10px] uppercase flex items-center gap-1">
@@ -78,7 +98,7 @@ export default function Enforcement() {
                         <div className="bg-destructive/5 p-2 rounded border border-destructive/10">
                            <div className="flex justify-between text-xs font-medium text-destructive mb-1">
                              <span>Outstanding</span>
-                             <span>{formatCurrency(agreement.principalAmount)}</span>
+                             <span>{formatCurrency(agreement.principalAmount || 0)}</span>
                            </div>
                            <div className="text-[10px] text-destructive/80">
                              Owner: {agreement.internalOwner}
