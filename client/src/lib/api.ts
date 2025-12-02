@@ -188,6 +188,14 @@ export async function createActivity(activityData: ActivityData) {
   return handleResponse(response);
 }
 
+export async function deleteActivity(id: string) {
+  const response = await fetch(`${API_URL}/activities/${id}`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
 // ==================== DOCUMENTS ====================
 
 export async function fetchDocuments() {

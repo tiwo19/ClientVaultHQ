@@ -31,6 +31,7 @@ interface DataContextType {
   removePerson: (id: string) => Promise<void>;
 
   addActivity: (activity: api.ActivityData) => Promise<void>;
+  removeActivity: (id: string) => Promise<void>;
 
   addPartyRelationship: (rel: api.PartyRelationshipData) => Promise<void>;
   removePartyRelationship: (id: string) => Promise<void>;
@@ -228,6 +229,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     await addActivityMutation.mutateAsync(activity);
   };
 
+  const removeActivityMutation = useMutation({
+    mutationFn: api.deleteActivity,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["activities"] });
+    }
+  });
+
+  const removeActivity = async (id: string) => {
+    await removeActivityMutation.mutateAsync(id);
+  };
+
   // Party Relationships
   const addPartyRelationshipMutation = useMutation({
     mutationFn: api.createPartyRelationship,
@@ -285,6 +297,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       addPerson,
       removePerson,
       addActivity,
+      removeActivity,
       addPartyRelationship,
       removePartyRelationship
     }}>

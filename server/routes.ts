@@ -329,6 +329,15 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/activities/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteActivity(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== DOCUMENT ROUTES ====================
   
   app.get("/api/documents", requireAuth, async (req, res) => {

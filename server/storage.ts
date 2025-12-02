@@ -42,6 +42,7 @@ export interface IStorage {
   getAllActivities(): Promise<Activity[]>;
   getActivitiesByAgreement(agreementId: string): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
+  deleteActivity(id: string): Promise<void>;
 
   // Documents
   getAllDocuments(): Promise<Document[]>;
@@ -159,6 +160,10 @@ export class DbStorage implements IStorage {
   async createActivity(activity: InsertActivity): Promise<Activity> {
     const result = await db.insert(activities).values(activity).returning();
     return result[0];
+  }
+
+  async deleteActivity(id: string): Promise<void> {
+    await db.delete(activities).where(eq(activities.id, id));
   }
 
   // Documents

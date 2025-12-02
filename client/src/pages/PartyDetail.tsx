@@ -104,7 +104,7 @@ function getActivityColor(type: string) {
 export default function PartyDetail() {
   const [, params] = useRoute("/parties/:id");
   const id = params?.id;
-  const { parties, persons, agreements, documents, activities, partyRelationships, addDocument, removeDocument, addPerson, removePerson, addActivity, updateParty, addPartyRelationship, removePartyRelationship, isLoading } = useData();
+  const { parties, persons, agreements, documents, activities, partyRelationships, addDocument, removeDocument, addPerson, removePerson, addActivity, removeActivity, updateParty, addPartyRelationship, removePartyRelationship, isLoading } = useData();
   const { toast } = useToast();
   
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -125,6 +125,7 @@ export default function PartyDetail() {
   const [activityDate, setActivityDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [activityImage, setActivityImage] = useState<File | null>(null);
   const [activityImagePreview, setActivityImagePreview] = useState<string | null>(null);
+  const [isSubmittingActivity, setIsSubmittingActivity] = useState(false);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
@@ -251,8 +252,9 @@ export default function PartyDetail() {
 
   const handleLogActivity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || !activityContent.trim()) return;
+    if (!id || !activityContent.trim() || isSubmittingActivity) return;
 
+    setIsSubmittingActivity(true);
     try {
       let imageUrl: string | null = null;
       
@@ -283,6 +285,19 @@ export default function PartyDetail() {
       toast({ title: "Activity Logged", description: `${activityType} has been recorded.` });
     } catch (error) {
       toast({ title: "Error", description: "Failed to log activity.", variant: "destructive" });
+    } finally {
+      setIsSubmittingActivity(false);
+    }
+  };
+
+  const handleDeleteActivity = async (activityId: string) => {
+    if (confirm("Are you sure you want to delete this activity entry?")) {
+      try {
+        await removeActivity(activityId);
+        toast({ title: "Activity Deleted" });
+      } catch (error) {
+        toast({ title: "Error", description: "Failed to delete activity.", variant: "destructive" });
+      }
     }
   };
 
@@ -772,8 +787,8 @@ export default function PartyDetail() {
                       )}
                       
                       <DialogFooter>
-                        <Button type="submit" disabled={!activityContent.trim()} data-testid="button-submit-activity">
-                          Log Activity
+                        <Button type="submit" disabled={!activityContent.trim() || isSubmittingActivity} data-testid="button-submit-activity">
+                          {isSubmittingActivity ? "Saving..." : "Log Activity"}
                         </Button>
                       </DialogFooter>
                     </form>
@@ -809,9 +824,20 @@ export default function PartyDetail() {
                                     </Link>
                                   )}
                                 </div>
-                                <span className="text-xs text-muted-foreground">
-                                  {format(new Date(activity.date), 'MMM d, yyyy h:mm a')}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-muted-foreground">
+                                    {format(new Date(activity.date), 'MMM d, yyyy h:mm a')}
+                                  </span>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                                    onClick={() => handleDeleteActivity(activity.id)}
+                                    data-testid={`button-delete-activity-${activity.id}`}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
                               </div>
                               <p className="text-sm text-foreground">{activity.content}</p>
                               {activity.imageUrl && (
