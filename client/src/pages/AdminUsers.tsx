@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useAuth } from "@/lib/auth";
+import { useState, useEffect } from "react";
+import { useAuth, AppUser } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,14 +9,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Trash2, UserPlus, Edit2, Shield } from "lucide-react";
+import { Trash2, UserPlus, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { AppUser } from "@/lib/mockData";
 
 export default function AdminUsers() {
-  const { users, addUser, removeUser, updateUser, user: currentUser } = useAuth();
+  const { users, addUser, removeUser, user: currentUser, fetchUsers } = useAuth();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   // Form State
   const [newName, setNewName] = useState("");
@@ -24,27 +27,35 @@ export default function AdminUsers() {
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<"Admin" | "User">("Admin");
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    addUser({
-      name: newName,
-      email: newEmail,
-      password: newPassword,
-      role: newRole
-    });
-    setIsAddOpen(false);
-    resetForm();
-    toast({ title: "User Added", description: `${newName} has been added to the system.` });
+    try {
+      await addUser({
+        name: newName,
+        email: newEmail,
+        password: newPassword,
+        role: newRole
+      });
+      setIsAddOpen(false);
+      resetForm();
+      toast({ title: "User Added", description: `${newName} has been added to the system.` });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to add user.", variant: "destructive" });
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (id === currentUser?.id) {
       toast({ title: "Action Failed", description: "You cannot delete your own account.", variant: "destructive" });
       return;
     }
     if (confirm("Are you sure you want to remove this user?")) {
-      removeUser(id);
-      toast({ title: "User Removed", description: "User access has been revoked." });
+      try {
+        await removeUser(id);
+        toast({ title: "User Removed", description: "User access has been revoked." });
+      } catch (error) {
+        toast({ title: "Error", description: "Failed to remove user.", variant: "destructive" });
+      }
     }
   };
 
@@ -123,25 +134,43 @@ export default function AdminUsers() {
                 <TableRow key={user.id}>
                   <TableCell className="flex items-center gap-3">
                     <Avatar className="h-8 w-8">
-                      <AvatarFallback>{user.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                      <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                        {user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                      </AvatarFallback>
                     </Avatar>
-                    <span className="font-medium">{user.name}</span>
-                    {user.id === currentUser?.id && <Badge variant="outline" className="ml-2 text-[10px]">You</Badge>}
+                    <div>
+                      <p className="font-medium">{user.name}</p>
+                      {user.id === currentUser?.id && (
+                        <Badge variant="outline" className="text-[10px] mt-0.5">You</Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={user.role === "Admin" ? "default" : "secondary"} className="flex w-fit items-center gap-1">
+                    <Badge variant={user.role === "Admin" ? "default" : "secondary"} className="flex items-center gap-1 w-fit">
                       {user.role === "Admin" && <Shield className="h-3 w-3" />}
                       {user.role}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{user.email}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(user.id)} disabled={user.id === currentUser?.id}>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => handleDelete(user.id)}
+                      disabled={user.id === currentUser?.id}
+                    >
                       <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
                     </Button>
                   </TableCell>
                 </TableRow>
               ))}
+              {users.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    No users found. Add the first user to get started.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>

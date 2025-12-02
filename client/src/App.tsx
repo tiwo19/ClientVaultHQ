@@ -17,14 +17,18 @@ import { useEffect } from "react";
 
 // Protected Route Wrapper
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!user) {
+    if (!loading && !user) {
       setLocation("/login");
     }
-  }, [user, setLocation]);
+  }, [user, loading, setLocation]);
+
+  if (loading) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
 
   if (!user) return null;
 
@@ -66,14 +70,14 @@ function Router() {
 
 function App() {
   return (
-    <AuthProvider>
-      <DataProvider>
-        <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <DataProvider>
           <Toaster />
           <Router />
-        </QueryClientProvider>
-      </DataProvider>
-    </AuthProvider>
+        </DataProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
 

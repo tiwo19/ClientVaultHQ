@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Upload } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 
@@ -24,7 +24,7 @@ const STATUS_COLUMNS: PerformanceStatus[] = [
 ];
 
 export default function Agreements() {
-  const { agreements, parties, addAgreement, addDocument } = useData();
+  const { agreements, parties, addAgreement, addDocument, isLoading } = useData();
   const { user } = useAuth();
   const { toast } = useToast();
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -52,43 +52,47 @@ export default function Agreements() {
   const getPartyName = (id: string) => parties.find(p => p.id === id)?.name || "Unknown Party";
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
 
-  const handleAddAgreement = (e: React.FormEvent) => {
+  const handleAddAgreement = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Create Agreement
-    addAgreement({
-      title,
-      partyId,
-      type,
-      principalAmount: Number(amount),
-      interestRateAnnual: null,
-      governingLaw: "NY",
-      venueJurisdiction: "NY",
-      effectiveDate: date,
-      maturityDate: null,
-      internalOwner: user?.name || "Admin",
-      counterpartyRiskRating: "Medium",
-      performanceStatus: "Draft",
-      enforcementStage: "None",
-      isClientVisible: false,
-      isSecured: false,
-      isPersonalGuarantee: false
-    });
-
-    // "Upload" File (Mock)
-    if (file) {
-      addDocument({
-        agreementId: "mock-id-would-need-real-ref", // In real app, await ID from agreement creation
-        name: file.name,
-        type: "PDF",
-        partyId: partyId
+    try {
+      // Create Agreement
+      const newAgreement = await addAgreement({
+        title,
+        partyId,
+        type,
+        principalAmount: Number(amount),
+        interestRateAnnual: null,
+        governingLaw: "NY",
+        venueJurisdiction: "NY",
+        effectiveDate: date,
+        maturityDate: null,
+        internalOwner: user?.name || "Admin",
+        counterpartyRiskRating: "Medium",
+        performanceStatus: "Draft",
+        enforcementStage: "None",
+        isClientVisible: false,
+        isSecured: false,
+        isPersonalGuarantee: false
       });
-      toast({ title: "File Uploaded", description: `${file.name} attached to new agreement.` });
-    }
 
-    setIsAddOpen(false);
-    resetForm();
-    toast({ title: "Agreement Created", description: "New agreement has been added to Drafts." });
+      // Upload File if attached
+      if (file && newAgreement) {
+        await addDocument({
+          agreementId: newAgreement.id,
+          name: file.name,
+          type: "PDF",
+          file: file
+        });
+        toast({ title: "File Uploaded", description: `${file.name} attached to new agreement.` });
+      }
+
+      setIsAddOpen(false);
+      resetForm();
+      toast({ title: "Agreement Created", description: "New agreement has been added to Drafts." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to create agreement.", variant: "destructive" });
+    }
   };
 
   const resetForm = () => {
@@ -99,6 +103,10 @@ export default function Agreements() {
     setDate("");
     setFile(null);
   };
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  }
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col">
@@ -168,13 +176,11 @@ export default function Agreements() {
 
               <div className="space-y-2">
                 <Label>Upload Document (Optional)</Label>
-                <div className="flex items-center gap-2">
-                  <Input 
-                    type="file" 
-                    className="cursor-pointer" 
-                    onChange={(e) => setFile(e.target.files?.[0] || null)} 
-                  />
-                </div>
+                <Input 
+                  type="file" 
+                  className="cursor-pointer" 
+                  onChange={(e) => setFile(e.target.files?.[0] || null)} 
+                />
               </div>
 
               <DialogFooter>

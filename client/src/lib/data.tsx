@@ -1,83 +1,158 @@
-import { createContext, useContext, useState, ReactNode } from "react";
-import { 
-  parties as initialParties, 
-  agreements as initialAgreements, 
-  documents as initialDocuments, 
-  persons as initialPersons,
-  activities as initialActivities,
-  Party, Agreement, Document, Person, Activity 
-} from "./mockData";
+import { createContext, useContext, ReactNode } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import * as api from "./api";
+import type { Party, Agreement, Document, Person, Activity } from "./mockData";
 
 interface DataContextType {
+  // Queries
   parties: Party[];
   agreements: Agreement[];
   documents: Document[];
   persons: Person[];
   activities: Activity[];
-  
-  addParty: (party: Omit<Party, "id">) => void;
-  removeParty: (id: string) => void;
-  
-  addAgreement: (agreement: Omit<Agreement, "id">) => void;
-  removeAgreement: (id: string) => void;
-  
-  addDocument: (doc: Omit<Document, "id" | "dateUploaded">) => void;
-  removeDocument: (id: string) => void;
+  isLoading: boolean;
 
-  addPerson: (person: Omit<Person, "id">) => void;
+  // Mutations
+  addParty: (party: Omit<Party, "id">) => Promise<void>;
+  removeParty: (id: string) => Promise<void>;
+  
+  addAgreement: (agreement: Omit<Agreement, "id">) => Promise<Agreement>;
+  removeAgreement: (id: string) => Promise<void>;
+  
+  addDocument: (doc: { agreementId?: string; partyId?: string; name: string; type: string; file?: File }) => Promise<void>;
+  removeDocument: (id: string) => Promise<void>;
+
+  addPerson: (person: Omit<Person, "id">) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [parties, setParties] = useState<Party[]>(initialParties);
-  const [agreements, setAgreements] = useState<Agreement[]>(initialAgreements);
-  const [documents, setDocuments] = useState<Document[]>(initialDocuments);
-  const [persons, setPersons] = useState<Person[]>(initialPersons);
-  const [activities, setActivities] = useState<Activity[]>(initialActivities);
+  const queryClient = useQueryClient();
 
-  const addParty = (party: Omit<Party, "id">) => {
-    const newParty = { ...party, id: Math.random().toString(36).substr(2, 9) };
-    setParties([...parties, newParty]);
+  // Queries
+  const { data: parties = [], isLoading: partiesLoading } = useQuery({
+    queryKey: ["parties"],
+    queryFn: api.fetchParties
+  });
+
+  const { data: agreements = [], isLoading: agreementsLoading } = useQuery({
+    queryKey: ["agreements"],
+    queryFn: api.fetchAgreements
+  });
+
+  const { data: documents = [], isLoading: documentsLoading } = useQuery({
+    queryKey: ["documents"],
+    queryFn: api.fetchDocuments
+  });
+
+  const { data: persons = [], isLoading: personsLoading } = useQuery({
+    queryKey: ["persons"],
+    queryFn: api.fetchPersons
+  });
+
+  const { data: activities = [], isLoading: activitiesLoading } = useQuery({
+    queryKey: ["activities"],
+    queryFn: api.fetchActivities
+  });
+
+  const isLoading = partiesLoading || agreementsLoading || documentsLoading || personsLoading || activitiesLoading;
+
+  // Mutations
+  const addPartyMutation = useMutation({
+    mutationFn: api.createParty,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["parties"] });
+    }
+  });
+
+  const removePartyMutation = useMutation({
+    mutationFn: api.deleteParty,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["parties"] });
+    }
+  });
+
+  const addAgreementMutation = useMutation({
+    mutationFn: api.createAgreement,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agreements"] });
+    }
+  });
+
+  const removeAgreementMutation = useMutation({
+    mutationFn: api.deleteAgreement,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agreements"] });
+    }
+  });
+
+  const addDocumentMutation = useMutation({
+    mutationFn: ({ file, agreementId, partyId, type }: { file: File; agreementId?: string; partyId?: string; type: string }) => 
+      api.uploadDocument(file, agreementId, partyId, type),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+    }
+  });
+
+  const removeDocumentMutation = useMutation({
+    mutationFn: api.deleteDocument,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+    }
+  });
+
+  // Helper functions
+  const addParty = async (party: Omit<Party, "id">) => {
+    await addPartyMutation.mutateAsync(party);
   };
 
-  const removeParty = (id: string) => {
-    setParties(parties.filter(p => p.id !== id));
+  const removeParty = async (id: string) => {
+    await removePartyMutation.mutateAsync(id);
   };
 
-  const addAgreement = (agreement: Omit<Agreement, "id">) => {
-    const newAgreement = { ...agreement, id: Math.random().toString(36).substr(2, 9) };
-    setAgreements([...agreements, newAgreement]);
+  const addAgreement = async (agreement: Omit<Agreement, "id">) => {
+    return await addAgreementMutation.mutateAsync(agreement);
   };
 
-  const removeAgreement = (id: string) => {
-    setAgreements(agreements.filter(a => a.id !== id));
+  const removeAgreement = async (id: string) => {
+    await removeAgreementMutation.mutateAsync(id);
   };
 
-  const addDocument = (doc: Omit<Document, "id" | "dateUploaded">) => {
-    const newDoc = { 
-      ...doc, 
-      id: Math.random().toString(36).substr(2, 9),
-      dateUploaded: new Date().toISOString()
-    };
-    setDocuments([...documents, newDoc]);
+  const addDocument = async (doc: { agreementId?: string; partyId?: string; name: string; type: string; file?: File }) => {
+    if (doc.file) {
+      await addDocumentMutation.mutateAsync({
+        file: doc.file,
+        agreementId: doc.agreementId,
+        partyId: doc.partyId,
+        type: doc.type
+      });
+    }
   };
 
-  const removeDocument = (id: string) => {
-    setDocuments(documents.filter(d => d.id !== id));
+  const removeDocument = async (id: string) => {
+    await removeDocumentMutation.mutateAsync(id);
   };
 
-  const addPerson = (person: Omit<Person, "id">) => {
-    const newPerson = { ...person, id: Math.random().toString(36).substr(2, 9) };
-    setPersons([...persons, newPerson]);
+  const addPerson = async (person: Omit<Person, "id">) => {
+    // TODO: Implement person creation endpoint
+    console.log("Person creation not yet implemented:", person);
   };
 
   return (
     <DataContext.Provider value={{
-      parties, agreements, documents, persons, activities,
-      addParty, removeParty,
-      addAgreement, removeAgreement,
-      addDocument, removeDocument,
+      parties,
+      agreements,
+      documents,
+      persons,
+      activities,
+      isLoading,
+      addParty,
+      removeParty,
+      addAgreement,
+      removeAgreement,
+      addDocument,
+      removeDocument,
       addPerson
     }}>
       {children}

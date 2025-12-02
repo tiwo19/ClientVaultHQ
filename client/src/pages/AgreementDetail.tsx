@@ -1,17 +1,15 @@
 import { useData } from "@/lib/data";
 import { useRoute } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { 
-  Calendar, 
-  DollarSign, 
   FileText, 
   Shield, 
   User, 
@@ -26,6 +24,7 @@ import {
 import { format } from "date-fns";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { getDocumentDownloadUrl } from "@/lib/api";
 
 export default function AgreementDetail() {
   const [, params] = useRoute("/agreements/:id");
@@ -49,26 +48,35 @@ export default function AgreementDetail() {
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 
-  const handleUpload = (e: React.FormEvent) => {
+  const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uploadFile) return;
 
-    addDocument({
-      agreementId: id,
-      partyId: agreement.partyId,
-      name: uploadFile.name,
-      type: "PDF"
-    });
-    
-    setIsUploadOpen(false);
-    setUploadFile(null);
-    toast({ title: "Document Uploaded", description: "File has been attached to the agreement." });
+    try {
+      await addDocument({
+        agreementId: id,
+        partyId: agreement.partyId,
+        name: uploadFile.name,
+        type: "PDF",
+        file: uploadFile
+      });
+      
+      setIsUploadOpen(false);
+      setUploadFile(null);
+      toast({ title: "Document Uploaded", description: "File has been attached to the agreement." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to upload document.", variant: "destructive" });
+    }
   };
 
-  const handleDeleteDoc = (docId: string) => {
+  const handleDeleteDoc = async (docId: string) => {
     if (confirm("Are you sure you want to delete this document?")) {
-      removeDocument(docId);
-      toast({ title: "Document Removed" });
+      try {
+        await removeDocument(docId);
+        toast({ title: "Document Removed" });
+      } catch (error) {
+        toast({ title: "Error", description: "Failed to delete document.", variant: "destructive" });
+      }
     }
   };
 
@@ -193,14 +201,12 @@ export default function AgreementDetail() {
               <div className="relative space-y-8 before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
                 {relatedActivities.map((activity) => (
                   <div key={activity.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                    {/* Icon */}
                     <div className="flex items-center justify-center w-10 h-10 rounded-full border border-white bg-background shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
                       {activity.type === "Email" ? <Mail className="w-4 h-4 text-muted-foreground" /> : 
                        activity.type === "Call" ? <Phone className="w-4 h-4 text-muted-foreground" /> :
                        <FileText className="w-4 h-4 text-muted-foreground" />}
                     </div>
                     
-                    {/* Card */}
                     <Card className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4">
                       <div className="flex justify-between items-start mb-1">
                         <span className="font-bold text-sm">{activity.type}</span>
@@ -258,8 +264,10 @@ export default function AgreementDetail() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="sm">
-                            <Download className="h-4 w-4 mr-2" /> Download
+                          <Button variant="ghost" size="sm" asChild>
+                            <a href={getDocumentDownloadUrl(doc.id)} download>
+                              <Download className="h-4 w-4 mr-2" /> Download
+                            </a>
                           </Button>
                           <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleDeleteDoc(doc.id)}>
                             <Trash2 className="h-4 w-4 text-destructive" />
