@@ -264,7 +264,9 @@ export default function PartyDetail() {
           category: "Other",
           file: activityImage
         });
-        imageUrl = `/uploads/${activityImage.name}`;
+        if (uploadedDoc?.filePath) {
+          imageUrl = `/api/documents/${uploadedDoc.id}/download`;
+        }
       }
       
       await addActivity({
@@ -360,7 +362,7 @@ export default function PartyDetail() {
         fromPartyId: id,
         toPartyId: relToPartyId,
         relationshipType: relType,
-        notes: relNotes || null
+        notes: relNotes || undefined
       });
       setIsAddRelationshipOpen(false);
       setRelToPartyId("");
@@ -812,6 +814,17 @@ export default function PartyDetail() {
                                 </span>
                               </div>
                               <p className="text-sm text-foreground">{activity.content}</p>
+                              {activity.imageUrl && (
+                                <div className="mt-3">
+                                  <img 
+                                    src={activity.imageUrl} 
+                                    alt="Activity screenshot" 
+                                    className="max-h-64 rounded-lg border shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                                    onClick={() => window.open(activity.imageUrl!, '_blank')}
+                                    data-testid={`activity-image-${activity.id}`}
+                                  />
+                                </div>
+                              )}
                               <p className="text-xs text-muted-foreground mt-2">
                                 by {activity.user}
                               </p>

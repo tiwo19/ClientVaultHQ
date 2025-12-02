@@ -24,7 +24,7 @@ interface DataContextType {
   removeAgreement: (id: string) => Promise<void>;
   bulkUpdateAgreementStatus: (ids: string[], status: string) => Promise<void>;
   
-  addDocument: (doc: { agreementId?: string; partyId?: string; name: string; type: string; category?: string; expirationDate?: string; notes?: string; file?: File }) => Promise<void>;
+  addDocument: (doc: { agreementId?: string; partyId?: string; name: string; type: string; category?: string; expirationDate?: string; notes?: string; file?: File }) => Promise<Document | null>;
   removeDocument: (id: string) => Promise<void>;
 
   addPerson: (person: Omit<Person, "id">) => Promise<void>;
@@ -175,9 +175,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     expirationDate?: string;
     notes?: string;
     file?: File 
-  }) => {
+  }): Promise<Document | null> => {
     if (doc.file) {
-      await addDocumentMutation.mutateAsync({
+      const result = await addDocumentMutation.mutateAsync({
         file: doc.file,
         agreementId: doc.agreementId,
         partyId: doc.partyId,
@@ -186,7 +186,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         expirationDate: doc.expirationDate,
         notes: doc.notes
       });
+      return result as Document;
     }
+    return null;
   };
 
   const removeDocument = async (id: string) => {
