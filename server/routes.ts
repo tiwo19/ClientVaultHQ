@@ -9,6 +9,10 @@ import createMemoryStore from "memorystore";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import OpenAI from "openai";
+
+// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const MemoryStore = createMemoryStore(session);
 
@@ -439,6 +443,165 @@ export async function registerRoutes(
       await storage.deletePartyRelationship(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== AI BUCKET ROUTES ====================
+
+  app.post("/api/ai-bucket/analyze", requireAuth, upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Get all parties for matching
+      const allParties = await storage.getAllParties();
+      const partyNames = allParties.map(p => `${p.name} (ID: ${p.id}, Type: ${p.type})`).join("\n");
+
+      // Read file and convert to base64
+      const fileBuffer = fs.readFileSync(req.file.path);
+      const base64Image = fileBuffer.toString("base64");
+      
+      // Determine MIME type
+      const ext = path.extname(req.file.originalname).toLowerCase();
+      let mimeType = "image/png";
+      if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
+      else if (ext === ".gif") mimeType = "image/gif";
+      else if (ext === ".webp") mimeType = "image/webp";
+      else if (ext === ".pdf") mimeType = "application/pdf";
+
+      // Use GPT-5 vision to analyze the image
+      const analysisResponse = await openai.chat.completions.create({
+        model: "gpt-5",
+        messages: [
+          {
+            role: "system",
+            content: `You are an assistant analyzing business documents and communications (emails, screenshots, letters, contracts) for a legal/financial management system.
+
+Your task is to:
+1. Identify which client/party this document relates to from the list provided
+2. Extract the date of the communication or document (if visible)
+3. Determine the type of activity (Email, Call, Meeting, LetterSent, InternalNote, CourtFiling)
+4. Write a brief summary of the content
+
+Here are the existing parties in the system:
+${partyNames}
+
+Respond with JSON in this exact format:
+{
+  "matchedPartyId": "the UUID of the matched party, or null if no match",
+  "matchedPartyName": "name of the matched party for display, or null",
+  "confidence": 0.0 to 1.0,
+  "date": "YYYY-MM-DD format if found, or null",
+  "activityType": "Email|Call|Meeting|LetterSent|InternalNote|CourtFiling",
+  "summary": "brief summary of the document content",
+  "reasoning": "brief explanation of how you matched the party"
+}`
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Analyze this document/image and extract the relevant information for our client management system."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Image}`
+                }
+              }
+            ]
+          }
+        ],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 2048
+      });
+
+      const analysisText = analysisResponse.choices[0].message.content;
+      const analysis = JSON.parse(analysisText || "{}");
+
+      // Return the analysis along with file info
+      res.json({
+        analysis,
+        file: {
+          id: req.file.filename,
+          path: req.file.path,
+          originalName: req.file.originalname,
+          mimeType
+        }
+      });
+    } catch (error: any) {
+      console.error("AI Bucket analysis error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/ai-bucket/confirm", requireAuth, async (req, res) => {
+    try {
+      const { partyId, date, activityType, summary, filePath, originalName } = req.body;
+      
+      if (!partyId || !date || !activityType || !summary) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      // Validate partyId exists
+      const party = await storage.getParty(partyId);
+      if (!party) {
+        return res.status(400).json({ error: "Invalid party" });
+      }
+
+      // Get current user
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      let imageUrl: string | null = null;
+
+      // If there's a file, validate it's in our uploads directory and create a document
+      if (filePath && originalName) {
+        // Security: Validate the file path is within uploads directory
+        const normalizedPath = path.normalize(filePath);
+        const uploadsDir = path.normalize(uploadDir);
+        
+        if (!normalizedPath.startsWith(uploadsDir)) {
+          return res.status(400).json({ error: "Invalid file path" });
+        }
+        
+        // Verify the file exists
+        if (!fs.existsSync(normalizedPath)) {
+          return res.status(400).json({ error: "File not found" });
+        }
+
+        const doc = await storage.createDocument({
+          partyId,
+          agreementId: null,
+          name: originalName,
+          type: "Image",
+          category: "Other",
+          filePath: normalizedPath,
+          expirationDate: null,
+          notes: "Uploaded via AI Bucket"
+        });
+        imageUrl = `/api/documents/${doc.id}/download`;
+      }
+
+      // Create the activity
+      const activity = await storage.createActivity({
+        partyId,
+        agreementId: null,
+        type: activityType,
+        content: summary,
+        date,
+        user: user.name,
+        imageUrl
+      });
+
+      res.json({ success: true, activity });
+    } catch (error: any) {
+      console.error("AI Bucket confirm error:", error);
       res.status(500).json({ error: error.message });
     }
   });

@@ -9,6 +9,7 @@ import Enforcement from "@/pages/Enforcement";
 import Parties from "@/pages/Parties";
 import PartyDetail from "@/pages/PartyDetail";
 import AgreementDetail from "@/pages/AgreementDetail";
+import AIBucket from "@/pages/AIBucket";
 import Login from "@/pages/Login";
 import AdminUsers from "@/pages/AdminUsers";
 import NotFound from "@/pages/not-found";
@@ -65,6 +66,9 @@ function Router() {
       </Route>
       <Route path="/admin/users">
         <ProtectedRoute component={AdminUsers} />
+      </Route>
+      <Route path="/ai-bucket">
+        <ProtectedRoute component={AIBucket} />
       </Route>
       
       <Route component={NotFound} />
