@@ -67,7 +67,33 @@ export interface Document {
   dateUploaded: string;
 }
 
+export interface AppUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "Admin" | "User";
+  avatar?: string;
+  password?: string; // Mock only
+}
+
 // MOCK DATA STORE
+
+export const mockUsers: AppUser[] = [
+  { 
+    id: "u1", 
+    email: "jking@workdigital.com", 
+    name: "J. King", 
+    role: "Admin", 
+    password: "Rhin3land3r!" 
+  },
+  {
+    id: "u2",
+    email: "alice@legalflow.com",
+    name: "Alice Admin",
+    role: "Admin",
+    password: "password"
+  }
+];
 
 export const parties: Party[] = [
   { id: "p1", name: "Apex Capital Holdings", type: "Company", email: "contact@apexcap.com", phone: "+1 212 555 0123", address: "101 Wall St, NY" },

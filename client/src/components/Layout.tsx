@@ -7,22 +7,29 @@ import {
   Settings, 
   Search,
   Bell,
-  Menu
+  Menu,
+  LogOut,
+  Shield
 } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAuth } from "@/lib/auth";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const { user, logout } = useAuth();
 
   const navItems = [
     { label: "Dashboard", icon: LayoutDashboard, href: "/" },
     { label: "Parties", icon: Users, href: "/parties" },
     { label: "Agreements", icon: FileText, href: "/agreements" },
     { label: "Enforcement", icon: Gavel, href: "/enforcement" },
+    // Admin only route shown for demo purposes (in real app, filter by role)
+    ...(user?.role === "Admin" ? [{ label: "Admin Users", icon: Shield, href: "/admin/users" }] : []),
   ];
 
   const NavContent = () => (
@@ -38,7 +45,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {navItems.map((item) => {
           const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
           return (
-            <Link key={item.href} href={item.href} className={`
+            <Link key={item.href} href={item.href}>
+              <a className={`
                 flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors cursor-pointer
                 ${isActive 
                   ? "bg-sidebar-accent text-sidebar-accent-foreground" 
@@ -46,6 +54,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               `}>
                 <item.icon className="h-4 w-4" />
                 {item.label}
+              </a>
             </Link>
           );
         })}
@@ -97,15 +106,31 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <Bell className="h-5 w-5" />
             </Button>
             <div className="h-6 w-px bg-border mx-2" />
-            <div className="flex items-center gap-3">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-foreground">Alice Admin</p>
-                <p className="text-xs text-muted-foreground">General Counsel</p>
-              </div>
-              <Avatar className="h-8 w-8 bg-primary text-primary-foreground">
-                <AvatarFallback>AA</AvatarFallback>
-              </Avatar>
-            </div>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-3 hover:opacity-80 transition-opacity focus:outline-none">
+                  <div className="text-right hidden sm:block">
+                    <p className="text-sm font-medium text-foreground">{user?.name || "User"}</p>
+                    <p className="text-xs text-muted-foreground">{user?.role || "Guest"}</p>
+                  </div>
+                  <Avatar className="h-8 w-8 bg-primary text-primary-foreground">
+                    <AvatarFallback>{user?.name?.substring(0, 2).toUpperCase() || "U"}</AvatarFallback>
+                  </Avatar>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>Profile</DropdownMenuItem>
+                <DropdownMenuItem>Settings</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={logout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
         
