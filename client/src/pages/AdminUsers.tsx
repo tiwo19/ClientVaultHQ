@@ -9,17 +9,28 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Trash2, UserPlus, Shield } from "lucide-react";
+import { Trash2, UserPlus, Shield, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AdminUsers() {
-  const { users, addUser, removeUser, user: currentUser, fetchUsers } = useAuth();
+  const { users, addUser, removeUser, user: currentUser, fetchUsers, loading } = useAuth();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    if (!loading && currentUser) {
+      setIsLoadingUsers(true);
+      setFetchError(null);
+      fetchUsers()
+        .catch((err) => {
+          console.error("Failed to fetch users:", err);
+          setFetchError("Failed to load users. Please try again.");
+        })
+        .finally(() => setIsLoadingUsers(false));
+    }
+  }, [loading, currentUser]);
 
   // Form State
   const [newName, setNewName] = useState("");
@@ -165,7 +176,33 @@ export default function AdminUsers() {
                   </TableCell>
                 </TableRow>
               ))}
-              {users.length === 0 && (
+              {isLoadingUsers && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-8">
+                    <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading users...
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+              {fetchError && !isLoadingUsers && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-8 text-destructive">
+                    {fetchError}
+                    <Button variant="link" onClick={() => {
+                      setIsLoadingUsers(true);
+                      setFetchError(null);
+                      fetchUsers()
+                        .catch(() => setFetchError("Failed to load users. Please try again."))
+                        .finally(() => setIsLoadingUsers(false));
+                    }}>
+                      Try again
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isLoadingUsers && !fetchError && users.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                     No users found. Add the first user to get started.

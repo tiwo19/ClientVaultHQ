@@ -1,6 +1,7 @@
 import { createContext, useContext, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "./api";
+import { useAuth } from "./auth";
 import type { Party, Agreement, Document, Person, Activity, PartyRelationship } from "@shared/schema";
 
 interface DataContextType {
@@ -39,39 +40,49 @@ const DataContext = createContext<DataContextType | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const { user, loading: authLoading } = useAuth();
+  
+  // Only fetch data when user is authenticated
+  const isAuthenticated = !authLoading && !!user;
 
-  // Queries
+  // Queries - only enabled when authenticated
   const { data: parties = [], isLoading: partiesLoading } = useQuery({
     queryKey: ["parties"],
-    queryFn: api.fetchParties
+    queryFn: api.fetchParties,
+    enabled: isAuthenticated
   });
 
   const { data: agreements = [], isLoading: agreementsLoading } = useQuery({
     queryKey: ["agreements"],
-    queryFn: api.fetchAgreements
+    queryFn: api.fetchAgreements,
+    enabled: isAuthenticated
   });
 
   const { data: documents = [], isLoading: documentsLoading } = useQuery({
     queryKey: ["documents"],
-    queryFn: api.fetchDocuments
+    queryFn: api.fetchDocuments,
+    enabled: isAuthenticated
   });
 
   const { data: persons = [], isLoading: personsLoading } = useQuery({
     queryKey: ["persons"],
-    queryFn: api.fetchPersons
+    queryFn: api.fetchPersons,
+    enabled: isAuthenticated
   });
 
   const { data: activities = [], isLoading: activitiesLoading } = useQuery({
     queryKey: ["activities"],
-    queryFn: api.fetchActivities
+    queryFn: api.fetchActivities,
+    enabled: isAuthenticated
   });
 
   const { data: partyRelationships = [], isLoading: relationshipsLoading } = useQuery({
     queryKey: ["partyRelationships"],
-    queryFn: api.fetchPartyRelationships
+    queryFn: api.fetchPartyRelationships,
+    enabled: isAuthenticated
   });
 
-  const isLoading = partiesLoading || agreementsLoading || documentsLoading || personsLoading || activitiesLoading || relationshipsLoading;
+  const isLoading = authLoading || (isAuthenticated && (partiesLoading || agreementsLoading || documentsLoading || personsLoading || activitiesLoading || relationshipsLoading));
 
   // Mutations
   const addPartyMutation = useMutation({
