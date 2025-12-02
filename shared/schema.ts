@@ -82,6 +82,7 @@ export const activities = pgTable("activities", {
   content: text("content").notNull(),
   date: text("date").notNull(),
   user: text("user").notNull(),
+  imageUrl: text("image_url"), // Optional attached screenshot/image path
 });
 
 export const insertActivitySchema = createInsertSchema(activities).omit({ id: true });
