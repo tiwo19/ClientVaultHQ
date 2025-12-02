@@ -5,13 +5,12 @@ import { insertUserSchema, insertPartySchema, insertAgreementSchema, insertDocum
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
-import { db } from "@db";
+import createMemoryStore from "memorystore";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 
-const PgSession = connectPgSimple(session);
+const MemoryStore = createMemoryStore(session);
 
 // Setup file upload
 const uploadDir = path.join(process.cwd(), "uploads");
@@ -40,13 +39,11 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
-  // Session middleware
+  // Session middleware with memory store
   app.use(
     session({
-      store: new PgSession({
-        pool: db as any,
-        tableName: 'session',
-        createTableIfMissing: true,
+      store: new MemoryStore({
+        checkPeriod: 86400000 // prune expired entries every 24h
       }),
       secret: process.env.SESSION_SECRET || 'work-digital-secret-key-change-in-prod',
       resave: false,
