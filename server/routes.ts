@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertDocumentSchema } from "@shared/schema";
+import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertActivitySchema, insertDocumentSchema } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import session from "express-session";
@@ -261,6 +261,25 @@ export async function registerRoutes(
       const activities = await storage.getAllActivities();
       res.json(activities);
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/activities", requireAuth, async (req, res) => {
+    try {
+      const sessionUser = await storage.getUser(req.session.userId!);
+      const userName = sessionUser?.name || "Unknown User";
+      
+      const activityData = insertActivitySchema.parse({
+        ...req.body,
+        user: userName
+      });
+      const activity = await storage.createActivity(activityData);
+      res.json(activity);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
       res.status(500).json({ error: error.message });
     }
   });

@@ -102,7 +102,7 @@ function getActivityColor(type: string) {
 export default function PartyDetail() {
   const [, params] = useRoute("/parties/:id");
   const id = params?.id;
-  const { parties, persons, agreements, documents, activities, addDocument, removeDocument, addPerson, removePerson, isLoading } = useData();
+  const { parties, persons, agreements, documents, activities, addDocument, removeDocument, addPerson, removePerson, addActivity, isLoading } = useData();
   const { toast } = useToast();
   
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -116,6 +116,11 @@ export default function PartyDetail() {
   const [contactRole, setContactRole] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
+
+  const [isLogActivityOpen, setIsLogActivityOpen] = useState(false);
+  const [activityType, setActivityType] = useState<string>("Call");
+  const [activityContent, setActivityContent] = useState("");
+  const [activityDate, setActivityDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   const party = parties.find(p => p.id === id);
   
@@ -207,6 +212,33 @@ export default function PartyDetail() {
         toast({ title: "Error", description: "Failed to remove contact.", variant: "destructive" });
       }
     }
+  };
+
+  const handleLogActivity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !activityContent.trim()) return;
+
+    try {
+      await addActivity({
+        partyId: id,
+        agreementId: null,
+        type: activityType,
+        content: activityContent,
+        date: activityDate
+      });
+      
+      setIsLogActivityOpen(false);
+      resetActivityForm();
+      toast({ title: "Activity Logged", description: `${activityType} has been recorded.` });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to log activity.", variant: "destructive" });
+    }
+  };
+
+  const resetActivityForm = () => {
+    setActivityType("Call");
+    setActivityContent("");
+    setActivityDate(format(new Date(), "yyyy-MM-dd"));
   };
 
   const handleDeleteDoc = async (docId: string) => {
@@ -394,6 +426,70 @@ export default function PartyDetail() {
             </TabsList>
             
             <TabsContent value="timeline" className="pt-6">
+              <div className="flex justify-end mb-4">
+                <Dialog open={isLogActivityOpen} onOpenChange={setIsLogActivityOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" data-testid="button-log-activity">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Log Activity
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Log Activity</DialogTitle>
+                      <DialogDescription>
+                        Record a call, email, meeting, or internal note.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleLogActivity} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Type</Label>
+                          <Select value={activityType} onValueChange={setActivityType}>
+                            <SelectTrigger data-testid="select-activity-type">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Call">Phone Call</SelectItem>
+                              <SelectItem value="Email">Email</SelectItem>
+                              <SelectItem value="Meeting">Meeting</SelectItem>
+                              <SelectItem value="LetterSent">Letter Sent</SelectItem>
+                              <SelectItem value="InternalNote">Internal Note</SelectItem>
+                              <SelectItem value="CourtFiling">Court Filing</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Date</Label>
+                          <Input 
+                            type="date" 
+                            value={activityDate} 
+                            onChange={e => setActivityDate(e.target.value)}
+                            required
+                            data-testid="input-activity-date"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Details</Label>
+                        <Textarea 
+                          value={activityContent} 
+                          onChange={e => setActivityContent(e.target.value)} 
+                          required 
+                          placeholder="Describe the interaction or note..."
+                          rows={4}
+                          data-testid="input-activity-content"
+                        />
+                      </div>
+                      <DialogFooter>
+                        <Button type="submit" disabled={!activityContent.trim()} data-testid="button-submit-activity">
+                          Log Activity
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
               {partyActivities.length > 0 ? (
                 <div className="relative">
                   <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />

@@ -149,6 +149,24 @@ export async function fetchActivities() {
   return handleResponse(response);
 }
 
+export interface ActivityData {
+  agreementId?: string | null;
+  partyId?: string | null;
+  type: string;
+  content: string;
+  date: string;
+}
+
+export async function createActivity(activityData: ActivityData) {
+  const response = await fetch(`${API_URL}/activities`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(activityData),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
 // ==================== DOCUMENTS ====================
 
 export async function fetchDocuments() {
