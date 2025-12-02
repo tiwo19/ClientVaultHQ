@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ShieldCheck, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { WorkDigitalLogo } from "@/components/WorkDigitalLogo";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -46,11 +47,8 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
       <div className="w-full max-w-md space-y-8">
         <div className="flex flex-col items-center text-center">
-          <div className="h-12 w-12 bg-primary rounded-lg flex items-center justify-center mb-4">
-            <span className="font-serif font-bold text-2xl text-primary-foreground">L</span>
-          </div>
-          <h1 className="text-3xl font-serif font-bold tracking-tight">LegalFlow</h1>
-          <p className="text-muted-foreground mt-2">Private Back Office Portal</p>
+          <WorkDigitalLogo className="h-12 w-auto text-foreground mb-6" />
+          <h1 className="text-2xl font-serif font-bold tracking-tight">Private Back Office Portal</h1>
         </div>
 
         <Card className="border-t-4 border-t-primary shadow-xl">

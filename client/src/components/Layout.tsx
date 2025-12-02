@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/auth";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { WorkDigitalLogo } from "./WorkDigitalLogo";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -35,10 +36,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const NavContent = () => (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
       <div className="p-6 flex items-center gap-3 border-b border-sidebar-border/50">
-        <div className="h-8 w-8 bg-sidebar-primary rounded-md flex items-center justify-center text-sidebar-primary-foreground font-bold font-serif text-xl">
-          L
-        </div>
-        <span className="font-serif font-bold text-lg tracking-tight">LegalFlow</span>
+        <WorkDigitalLogo className="h-8 w-auto text-sidebar-primary-foreground" />
       </div>
       
       <div className="flex-1 py-6 px-4 space-y-1">
