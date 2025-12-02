@@ -260,12 +260,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const { agreementId, partyId, type } = req.body;
+      const { agreementId, partyId, type, category, expirationDate, notes } = req.body;
       const docData = {
         agreementId: agreementId || null,
         partyId: partyId || null,
         name: req.file.originalname,
         type: type || "PDF",
+        category: category || "Other",
+        expirationDate: expirationDate || null,
+        notes: notes || null,
         filePath: req.file.path
       };
 

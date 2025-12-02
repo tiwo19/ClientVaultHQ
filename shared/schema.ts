@@ -84,6 +84,33 @@ export const insertActivitySchema = createInsertSchema(activities).omit({ id: tr
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
 export type Activity = typeof activities.$inferSelect;
 
+// Document categories for party documents
+export const documentCategories = [
+  // Identity Documents
+  "Passport",
+  "DriversLicense", 
+  "StateID",
+  "ProofOfAddress",
+  "SSNCard",
+  // Corporate Documents
+  "EIN",
+  "ArticlesOfIncorporation",
+  "OperatingAgreement",
+  "CertificateOfGoodStanding",
+  "InsuranceBinder",
+  "W9",
+  "BankStatement",
+  "FinancialStatement",
+  // Agreement Documents
+  "ExecutedAgreement",
+  "Amendment",
+  "SupportingDoc",
+  // Other
+  "Other"
+] as const;
+
+export type DocumentCategory = typeof documentCategories[number];
+
 // Documents table
 export const documents = pgTable("documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -91,7 +118,10 @@ export const documents = pgTable("documents", {
   partyId: varchar("party_id").references(() => parties.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   type: text("type").notNull(), // PDF, DOCX, Image
+  category: text("category").notNull().default("Other"), // Document category
   dateUploaded: text("date_uploaded").notNull(),
+  expirationDate: text("expiration_date"), // For documents that expire (licenses, insurance, etc.)
+  notes: text("notes"), // Additional notes about the document
   filePath: text("file_path"), // Path to stored file
 });
 

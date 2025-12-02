@@ -4,16 +4,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Trash2, Plus } from "lucide-react";
+import { Search, Trash2, Plus, FileText, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PartyType } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 
 export default function Parties() {
-  const { parties, persons, addParty, removeParty } = useData();
+  const { parties, persons, documents, addParty, removeParty } = useData();
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const { toast } = useToast();
@@ -31,6 +32,7 @@ export default function Parties() {
   );
 
   const getPersonCount = (partyId: string) => persons.filter(p => p.partyId === partyId).length;
+  const getDocumentCount = (partyId: string) => documents.filter(d => d.partyId === partyId).length;
 
   const handleAddParty = (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,13 +146,19 @@ export default function Parties() {
                 <TableHead>Contact Info</TableHead>
                 <TableHead>Address</TableHead>
                 <TableHead>Contacts</TableHead>
+                <TableHead>Documents</TableHead>
                 <TableHead className="w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredParties.map((party) => (
                 <TableRow key={party.id} className="cursor-pointer hover:bg-muted/50 group">
-                  <TableCell className="font-medium text-primary">{party.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/parties/${party.id}`} className="text-primary hover:underline flex items-center gap-1">
+                      {party.name}
+                      <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </Link>
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="font-normal text-muted-foreground">
                       {party.type}
@@ -169,6 +177,12 @@ export default function Parties() {
                     {getPersonCount(party.id)}
                   </TableCell>
                   <TableCell>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <FileText className="h-3 w-3" />
+                      <span className="text-sm">{getDocumentCount(party.id)}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
                     <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8" onClick={(e) => handleDelete(party.id, e)}>
                       <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
                     </Button>
@@ -177,7 +191,7 @@ export default function Parties() {
               ))}
               {filteredParties.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     No parties found matching "{search}"
                   </TableCell>
                 </TableRow>

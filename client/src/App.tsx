@@ -7,6 +7,7 @@ import Dashboard from "@/pages/Dashboard";
 import Agreements from "@/pages/Agreements";
 import Enforcement from "@/pages/Enforcement";
 import Parties from "@/pages/Parties";
+import PartyDetail from "@/pages/PartyDetail";
 import AgreementDetail from "@/pages/AgreementDetail";
 import Login from "@/pages/Login";
 import AdminUsers from "@/pages/AdminUsers";
@@ -58,6 +59,9 @@ function Router() {
       </Route>
       <Route path="/parties">
         <ProtectedRoute component={Parties} />
+      </Route>
+      <Route path="/parties/:id">
+        <ProtectedRoute component={PartyDetail} />
       </Route>
       <Route path="/admin/users">
         <ProtectedRoute component={AdminUsers} />

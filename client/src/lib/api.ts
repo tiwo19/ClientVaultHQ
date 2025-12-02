@@ -138,12 +138,27 @@ export async function fetchDocuments() {
   return handleResponse(response);
 }
 
-export async function uploadDocument(file: File, agreementId?: string, partyId?: string, type: string = "PDF") {
+export interface DocumentUploadOptions {
+  file: File;
+  agreementId?: string;
+  partyId?: string;
+  type?: string;
+  category?: string;
+  expirationDate?: string;
+  notes?: string;
+}
+
+export async function uploadDocument(options: DocumentUploadOptions) {
+  const { file, agreementId, partyId, type = "PDF", category = "Other", expirationDate, notes } = options;
+  
   const formData = new FormData();
   formData.append("file", file);
   if (agreementId) formData.append("agreementId", agreementId);
   if (partyId) formData.append("partyId", partyId);
   formData.append("type", type);
+  formData.append("category", category);
+  if (expirationDate) formData.append("expirationDate", expirationDate);
+  if (notes) formData.append("notes", notes);
 
   const response = await fetch(`${API_URL}/documents/upload`, {
     method: "POST",

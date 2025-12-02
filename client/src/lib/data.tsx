@@ -19,7 +19,7 @@ interface DataContextType {
   addAgreement: (agreement: Omit<Agreement, "id">) => Promise<Agreement>;
   removeAgreement: (id: string) => Promise<void>;
   
-  addDocument: (doc: { agreementId?: string; partyId?: string; name: string; type: string; file?: File }) => Promise<void>;
+  addDocument: (doc: { agreementId?: string; partyId?: string; name: string; type: string; category?: string; expirationDate?: string; notes?: string; file?: File }) => Promise<void>;
   removeDocument: (id: string) => Promise<void>;
 
   addPerson: (person: Omit<Person, "id">) => Promise<void>;
@@ -88,8 +88,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   });
 
   const addDocumentMutation = useMutation({
-    mutationFn: ({ file, agreementId, partyId, type }: { file: File; agreementId?: string; partyId?: string; type: string }) => 
-      api.uploadDocument(file, agreementId, partyId, type),
+    mutationFn: (options: api.DocumentUploadOptions) => api.uploadDocument(options),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     }
@@ -119,13 +118,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
     await removeAgreementMutation.mutateAsync(id);
   };
 
-  const addDocument = async (doc: { agreementId?: string; partyId?: string; name: string; type: string; file?: File }) => {
+  const addDocument = async (doc: { 
+    agreementId?: string; 
+    partyId?: string; 
+    name: string; 
+    type: string; 
+    category?: string;
+    expirationDate?: string;
+    notes?: string;
+    file?: File 
+  }) => {
     if (doc.file) {
       await addDocumentMutation.mutateAsync({
         file: doc.file,
         agreementId: doc.agreementId,
         partyId: doc.partyId,
-        type: doc.type
+        type: doc.type,
+        category: doc.category,
+        expirationDate: doc.expirationDate,
+        notes: doc.notes
       });
     }
   };

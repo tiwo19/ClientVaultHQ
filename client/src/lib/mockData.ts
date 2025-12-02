@@ -58,13 +58,23 @@ export interface Activity {
   user: string;
 }
 
+export type DocumentCategory = 
+  | "Passport" | "DriversLicense" | "StateID" | "ProofOfAddress" | "SSNCard"
+  | "EIN" | "ArticlesOfIncorporation" | "OperatingAgreement" | "CertificateOfGoodStanding" 
+  | "InsuranceBinder" | "W9" | "BankStatement" | "FinancialStatement"
+  | "ExecutedAgreement" | "Amendment" | "SupportingDoc" | "Other";
+
 export interface Document {
   id: string;
-  agreementId?: string;
-  partyId?: string;
+  agreementId?: string | null;
+  partyId?: string | null;
   name: string;
   type: "PDF" | "DOCX" | "Image";
+  category: DocumentCategory;
   dateUploaded: string;
+  expirationDate?: string | null;
+  notes?: string | null;
+  filePath?: string | null;
 }
 
 export interface AppUser {
@@ -165,7 +175,7 @@ export const activities: Activity[] = [
 ];
 
 export const documents: Document[] = [
-  { id: "d1", agreementId: "a1", name: "Executed_Note_vFinal.pdf", type: "PDF", dateUploaded: "2023-01-15" },
-  { id: "d2", agreementId: "a4", name: "Lease_Agreement_Signed.pdf", type: "PDF", dateUploaded: "2022-06-01" },
-  { id: "d3", agreementId: "a4", name: "Dunning_Letter_1.pdf", type: "PDF", dateUploaded: subDays(new Date(), 15).toISOString() },
+  { id: "d1", agreementId: "a1", partyId: null, name: "Executed_Note_vFinal.pdf", type: "PDF", category: "ExecutedAgreement", dateUploaded: "2023-01-15", expirationDate: null, notes: null, filePath: null },
+  { id: "d2", agreementId: "a4", partyId: null, name: "Lease_Agreement_Signed.pdf", type: "PDF", category: "ExecutedAgreement", dateUploaded: "2022-06-01", expirationDate: null, notes: null, filePath: null },
+  { id: "d3", agreementId: "a4", partyId: null, name: "Dunning_Letter_1.pdf", type: "PDF", category: "SupportingDoc", dateUploaded: subDays(new Date(), 15).toISOString(), expirationDate: null, notes: null, filePath: null },
 ];
