@@ -34,10 +34,16 @@ Preferred communication style: Simple, everyday language.
 - Optimistic updates and cache invalidation patterns
 
 **Key Features:**
-- Kanban boards for agreement lifecycle (Draft → Performing → Settled)
+- Kanban boards for agreement lifecycle with drag-and-drop (Draft → Performing → Settled)
+- Bulk status updates with selection mode on Agreements board
 - Enforcement pipeline visualization (Dunning → Suit Filed → Judgment)
 - Searchable party directory with relationship mapping
-- Document management with file upload/download
+- Party relationships management (Parent, Subsidiary, Guarantor, JV Partner, etc.)
+- Document management with file upload/download and expiration tracking
+- Document expiry alerts on Dashboard
+- Agreement notes field for internal comments
+- Maturity date alerts on Dashboard
+- Global search across parties, agreements, documents, and activities
 - Activity timeline tracking
 - Role-based access (Admin vs User)
 
@@ -63,12 +69,14 @@ Preferred communication style: Simple, everyday language.
 - `users` - Authentication and user management (email, name, password hash, role)
 - `parties` - Companies, individuals, trusts, banks, JV partners
 - `persons` - Contacts associated with parties (name, role, email, phone)
-- `agreements` - Contracts with financial terms, dates, status tracking
+- `agreements` - Contracts with financial terms, dates, status tracking, notes
 - `activities` - Timeline entries (emails, calls, meetings, notes)
-- `documents` - File metadata with agreement/party associations
+- `documents` - File metadata with agreement/party associations, expiration dates
+- `partyRelationships` - Links between parties (Parent, Subsidiary, Guarantor, etc.)
 
 **Data Model Relationships:**
 - Parties have many Persons (one-to-many via `partyId`)
+- Parties have many Relationships (self-referential many-to-many via `partyRelationships`)
 - Agreements belong to Parties (one-to-many via `partyId`)
 - Documents link to Agreements and/or Parties (optional foreign keys)
 - Activities track agreement history (one-to-many via `agreementId`)

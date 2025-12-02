@@ -235,3 +235,49 @@ export async function deleteDocument(id: string) {
 export function getDocumentDownloadUrl(id: string) {
   return `${API_URL}/documents/${id}/download`;
 }
+
+// ==================== PARTY RELATIONSHIPS ====================
+
+export async function fetchPartyRelationships() {
+  const response = await fetch(`${API_URL}/party-relationships`, { credentials: "include" });
+  return handleResponse(response);
+}
+
+export async function fetchPartyRelationshipsByParty(partyId: string) {
+  const response = await fetch(`${API_URL}/party-relationships/party/${partyId}`, { credentials: "include" });
+  return handleResponse(response);
+}
+
+export interface PartyRelationshipData {
+  fromPartyId: string;
+  toPartyId: string;
+  relationshipType: string;
+  notes?: string;
+}
+
+export async function createPartyRelationship(data: PartyRelationshipData) {
+  const response = await fetch(`${API_URL}/party-relationships`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+export async function deletePartyRelationship(id: string) {
+  const response = await fetch(`${API_URL}/party-relationships/${id}`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+// ==================== BULK OPERATIONS ====================
+
+export async function bulkUpdateAgreementStatus(ids: string[], status: string) {
+  const results = await Promise.all(
+    ids.map(id => updateAgreement(id, { performanceStatus: status }))
+  );
+  return results;
+}

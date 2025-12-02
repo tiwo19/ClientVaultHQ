@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { 
@@ -53,6 +54,7 @@ export default function AgreementDetail() {
   const [editVenueJurisdiction, setEditVenueJurisdiction] = useState("");
   const [editInternalOwner, setEditInternalOwner] = useState("");
   const [editRiskRating, setEditRiskRating] = useState("Low");
+  const [editNotes, setEditNotes] = useState("");
 
   const agreement = agreements.find(a => a.id === id);
   
@@ -72,6 +74,7 @@ export default function AgreementDetail() {
       setEditVenueJurisdiction(agreement.venueJurisdiction);
       setEditInternalOwner(agreement.internalOwner);
       setEditRiskRating(agreement.counterpartyRiskRating);
+      setEditNotes(agreement.notes || "");
     }
   }, [agreement]);
   
@@ -135,7 +138,8 @@ export default function AgreementDetail() {
         governingLaw: editGoverningLaw,
         venueJurisdiction: editVenueJurisdiction,
         internalOwner: editInternalOwner,
-        counterpartyRiskRating: editRiskRating as any
+        counterpartyRiskRating: editRiskRating as any,
+        notes: editNotes || null
       });
       setIsEditOpen(false);
       toast({ title: "Agreement Updated", description: "Changes have been saved." });
@@ -351,6 +355,17 @@ export default function AgreementDetail() {
                   </div>
                 </div>
 
+                <div className="space-y-2">
+                  <Label>Internal Notes</Label>
+                  <Textarea 
+                    value={editNotes} 
+                    onChange={e => setEditNotes(e.target.value)}
+                    placeholder="Add internal comments or notes about this agreement..."
+                    className="min-h-[80px]"
+                    data-testid="textarea-edit-notes"
+                  />
+                </div>
+
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
                   <Button type="submit" data-testid="button-save-agreement">Save Changes</Button>
@@ -450,6 +465,19 @@ export default function AgreementDetail() {
                     </div>
                  </CardContent>
                </Card>
+
+               {agreement.notes && (
+                 <Card>
+                   <CardHeader>
+                     <CardTitle>Internal Notes</CardTitle>
+                   </CardHeader>
+                   <CardContent>
+                     <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-agreement-notes">
+                       {agreement.notes}
+                     </p>
+                   </CardContent>
+                 </Card>
+               )}
             </TabsContent>
 
             <TabsContent value="timeline" className="pt-6">

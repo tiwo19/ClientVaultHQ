@@ -66,6 +66,7 @@ export const agreements = pgTable("agreements", {
   isClientVisible: boolean("is_client_visible").notNull().default(false),
   isSecured: boolean("is_secured").notNull().default(false),
   isPersonalGuarantee: boolean("is_personal_guarantee").notNull().default(false),
+  notes: text("notes"), // Internal notes/comments
 });
 
 export const insertAgreementSchema = createInsertSchema(agreements).omit({ id: true });
@@ -131,3 +132,33 @@ export const documents = pgTable("documents", {
 export const insertDocumentSchema = createInsertSchema(documents).omit({ id: true, dateUploaded: true });
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 export type Document = typeof documents.$inferSelect;
+
+// Party Relationships table
+export const partyRelationshipTypes = [
+  "Parent",
+  "Subsidiary", 
+  "Affiliate",
+  "Guarantor",
+  "Beneficiary",
+  "Trustee",
+  "Manager",
+  "Partner",
+  "Investor",
+  "Lender",
+  "Borrower",
+  "Other"
+] as const;
+
+export type PartyRelationshipType = typeof partyRelationshipTypes[number];
+
+export const partyRelationships = pgTable("party_relationships", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fromPartyId: varchar("from_party_id").notNull().references(() => parties.id, { onDelete: "cascade" }),
+  toPartyId: varchar("to_party_id").notNull().references(() => parties.id, { onDelete: "cascade" }),
+  relationshipType: text("relationship_type").notNull(), // Parent, Subsidiary, Guarantor, etc.
+  notes: text("notes"),
+});
+
+export const insertPartyRelationshipSchema = createInsertSchema(partyRelationships).omit({ id: true });
+export type InsertPartyRelationship = z.infer<typeof insertPartyRelationshipSchema>;
+export type PartyRelationship = typeof partyRelationships.$inferSelect;

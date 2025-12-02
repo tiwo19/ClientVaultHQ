@@ -1,7 +1,9 @@
 import { useData } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, Users, FileText, AlertTriangle, Loader2, TrendingUp } from "lucide-react";
+import { DollarSign, Users, FileText, AlertTriangle, Loader2, TrendingUp, Clock, Calendar } from "lucide-react";
 import { useMemo } from "react";
+import { Link } from "wouter";
+import { Badge } from "@/components/ui/badge";
 import {
   PieChart,
   Pie,
@@ -29,13 +31,57 @@ const STATUS_COLORS: Record<string, string> = {
 const PARTY_COLORS = ["#1e3a5f", "#c9a227", "#3b82f6", "#8b5cf6", "#ec4899"];
 
 export default function Dashboard() {
-  const { agreements, parties, isLoading } = useData();
+  const { agreements, parties, documents, isLoading } = useData();
   
   const totalPrincipal = agreements.reduce((sum, a) => sum + (a.principalAmount || 0), 0);
   const activeAgreements = agreements.filter(a => a.performanceStatus !== "WrittenOff" && a.performanceStatus !== "Settled").length;
   const inDefault = agreements.filter(a => a.performanceStatus === "InDefault").length;
   
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
+
+  const getDaysUntil = (dateStr: string | null) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffTime = date.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const getUrgencyColor = (days: number | null) => {
+    if (days === null) return "secondary";
+    if (days < 0) return "destructive";
+    if (days <= 7) return "destructive";
+    if (days <= 30) return "default";
+    if (days <= 90) return "secondary";
+    return "outline";
+  };
+
+  const upcomingMaturities = useMemo(() => {
+    return agreements
+      .filter(a => a.maturityDate && a.performanceStatus !== "Settled" && a.performanceStatus !== "WrittenOff")
+      .map(a => ({
+        ...a,
+        daysUntil: getDaysUntil(a.maturityDate),
+        partyName: parties.find(p => p.id === a.partyId)?.name || "Unknown"
+      }))
+      .filter(a => a.daysUntil !== null && a.daysUntil <= 90)
+      .sort((a, b) => (a.daysUntil || 0) - (b.daysUntil || 0))
+      .slice(0, 8);
+  }, [agreements, parties]);
+
+  const expiringDocuments = useMemo(() => {
+    return documents
+      .filter(d => d.expirationDate)
+      .map(d => ({
+        ...d,
+        daysUntil: getDaysUntil(d.expirationDate),
+        partyName: parties.find(p => p.id === d.partyId)?.name || "N/A"
+      }))
+      .filter(d => d.daysUntil !== null && d.daysUntil <= 90)
+      .sort((a, b) => (a.daysUntil || 0) - (b.daysUntil || 0))
+      .slice(0, 8);
+  }, [documents, parties]);
 
   const statusChartData = useMemo(() => {
     const statuses = ["Draft", "Sent", "Executed", "Performing", "InGracePeriod", "InDefault", "Settled"];
@@ -122,6 +168,88 @@ export default function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold text-destructive" data-testid="text-in-default">{inDefault}</div>
             <p className="text-xs text-destructive/80">{inDefault > 0 ? "Action required" : "No defaults"}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card data-testid="card-maturity-alerts" className={upcomingMaturities.some(a => (a.daysUntil || 0) <= 7) ? "border-amber-500/50" : ""}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-amber-500" />
+              Upcoming Maturities
+              {upcomingMaturities.length > 0 && (
+                <Badge variant="secondary" className="ml-auto">{upcomingMaturities.length}</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {upcomingMaturities.length > 0 ? (
+              <div className="space-y-3 max-h-[280px] overflow-y-auto">
+                {upcomingMaturities.map(agreement => (
+                  <Link key={agreement.id} href={`/agreements/${agreement.id}`}>
+                    <div className="flex items-center justify-between p-2 rounded-md border hover:bg-muted/50 transition-colors cursor-pointer" data-testid={`alert-maturity-${agreement.id}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{agreement.title}</p>
+                        <p className="text-xs text-muted-foreground">{agreement.partyName}</p>
+                      </div>
+                      <div className="flex items-center gap-2 ml-2">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(agreement.maturityDate!).toLocaleDateString()}
+                        </span>
+                        <Badge variant={getUrgencyColor(agreement.daysUntil) as any} className="whitespace-nowrap">
+                          {agreement.daysUntil! < 0 ? `${Math.abs(agreement.daysUntil!)}d overdue` : 
+                           agreement.daysUntil === 0 ? "Today" : `${agreement.daysUntil}d`}
+                        </Badge>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="h-[100px] flex items-center justify-center text-muted-foreground text-sm">
+                No maturities in the next 90 days
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-expiring-docs" className={expiringDocuments.some(d => (d.daysUntil || 0) <= 7) ? "border-amber-500/50" : ""}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-amber-500" />
+              Expiring Documents
+              {expiringDocuments.length > 0 && (
+                <Badge variant="secondary" className="ml-auto">{expiringDocuments.length}</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {expiringDocuments.length > 0 ? (
+              <div className="space-y-3 max-h-[280px] overflow-y-auto">
+                {expiringDocuments.map(doc => (
+                  <div key={doc.id} className="flex items-center justify-between p-2 rounded-md border" data-testid={`alert-doc-${doc.id}`}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.name}</p>
+                      <p className="text-xs text-muted-foreground">{doc.category} • {doc.partyName}</p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(doc.expirationDate!).toLocaleDateString()}
+                      </span>
+                      <Badge variant={getUrgencyColor(doc.daysUntil) as any} className="whitespace-nowrap">
+                        {doc.daysUntil! < 0 ? `${Math.abs(doc.daysUntil!)}d expired` : 
+                         doc.daysUntil === 0 ? "Today" : `${doc.daysUntil}d`}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="h-[100px] flex items-center justify-center text-muted-foreground text-sm">
+                No documents expiring in the next 90 days
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

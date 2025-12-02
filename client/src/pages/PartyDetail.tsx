@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { 
   FileText, 
   User, 
+  Users,
   Download, 
   Plus, 
   Phone, 
@@ -103,7 +104,7 @@ function getActivityColor(type: string) {
 export default function PartyDetail() {
   const [, params] = useRoute("/parties/:id");
   const id = params?.id;
-  const { parties, persons, agreements, documents, activities, addDocument, removeDocument, addPerson, removePerson, addActivity, updateParty, isLoading } = useData();
+  const { parties, persons, agreements, documents, activities, partyRelationships, addDocument, removeDocument, addPerson, removePerson, addActivity, updateParty, addPartyRelationship, removePartyRelationship, isLoading } = useData();
   const { toast } = useToast();
   
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -132,6 +133,11 @@ export default function PartyDetail() {
   const [editTaxId, setEditTaxId] = useState("");
   const [editJurisdiction, setEditJurisdiction] = useState("");
   const [editNotes, setEditNotes] = useState("");
+
+  const [isAddRelationshipOpen, setIsAddRelationshipOpen] = useState(false);
+  const [relToPartyId, setRelToPartyId] = useState("");
+  const [relType, setRelType] = useState("Parent");
+  const [relNotes, setRelNotes] = useState("");
 
   const party = parties.find(p => p.id === id);
   
@@ -168,6 +174,9 @@ export default function PartyDetail() {
   const partyActivities = activities
     .filter(a => a.partyId === id || (a.agreementId && relatedAgreementIds.includes(a.agreementId)))
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  
+  const relatedRelationships = partyRelationships.filter(r => r.fromPartyId === id || r.toPartyId === id);
+  const otherParties = parties.filter(p => p.id !== id);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -296,6 +305,47 @@ export default function PartyDetail() {
     } catch (error) {
       toast({ title: "Error", description: "Failed to update party.", variant: "destructive" });
     }
+  };
+
+  const handleAddRelationship = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !relToPartyId) return;
+
+    try {
+      await addPartyRelationship({
+        fromPartyId: id,
+        toPartyId: relToPartyId,
+        relationshipType: relType,
+        notes: relNotes || null
+      });
+      setIsAddRelationshipOpen(false);
+      setRelToPartyId("");
+      setRelType("Parent");
+      setRelNotes("");
+      toast({ title: "Relationship Added", description: "Party relationship has been created." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to add relationship.", variant: "destructive" });
+    }
+  };
+
+  const handleRemoveRelationship = async (relationshipId: string) => {
+    if (confirm("Are you sure you want to remove this relationship?")) {
+      try {
+        await removePartyRelationship(relationshipId);
+        toast({ title: "Relationship Removed" });
+      } catch (error) {
+        toast({ title: "Error", description: "Failed to remove relationship.", variant: "destructive" });
+      }
+    }
+  };
+
+  const getRelatedParty = (relationship: typeof partyRelationships[0]) => {
+    const relatedPartyId = relationship.fromPartyId === id ? relationship.toPartyId : relationship.fromPartyId;
+    return parties.find(p => p.id === relatedPartyId);
+  };
+
+  const getRelationshipDirection = (relationship: typeof partyRelationships[0]) => {
+    return relationship.fromPartyId === id ? "outgoing" : "incoming";
   };
 
   const isExpiringSoon = (expirationDate: string | null | undefined) => {
@@ -581,6 +631,10 @@ export default function PartyDetail() {
                 <FileText className="h-4 w-4 mr-2" />
                 Other ({otherDocs.length})
               </TabsTrigger>
+              <TabsTrigger value="relationships" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3">
+                <Users className="h-4 w-4 mr-2" />
+                Relationships ({relatedRelationships.length})
+              </TabsTrigger>
             </TabsList>
             
             <TabsContent value="timeline" className="pt-6">
@@ -732,6 +786,126 @@ export default function PartyDetail() {
                 <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
                   <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">No other documents uploaded yet.</p>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="relationships" className="pt-6">
+              <div className="flex justify-end mb-4">
+                <Dialog open={isAddRelationshipOpen} onOpenChange={setIsAddRelationshipOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" data-testid="button-add-relationship">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Relationship
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Add Party Relationship</DialogTitle>
+                      <DialogDescription>
+                        Link this party to another party (e.g., Parent Company, Guarantor, Joint Venture Partner).
+                      </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleAddRelationship} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Related Party</Label>
+                        <Select value={relToPartyId} onValueChange={setRelToPartyId}>
+                          <SelectTrigger data-testid="select-related-party">
+                            <SelectValue placeholder="Select a party..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {otherParties.map(p => (
+                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Relationship Type</Label>
+                        <Select value={relType} onValueChange={setRelType}>
+                          <SelectTrigger data-testid="select-relationship-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Parent">Parent Company</SelectItem>
+                            <SelectItem value="Subsidiary">Subsidiary</SelectItem>
+                            <SelectItem value="Affiliate">Affiliate</SelectItem>
+                            <SelectItem value="Guarantor">Guarantor</SelectItem>
+                            <SelectItem value="JVPartner">JV Partner</SelectItem>
+                            <SelectItem value="Lender">Lender</SelectItem>
+                            <SelectItem value="Borrower">Borrower</SelectItem>
+                            <SelectItem value="Agent">Agent</SelectItem>
+                            <SelectItem value="Trustee">Trustee</SelectItem>
+                            <SelectItem value="Beneficiary">Beneficiary</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Notes (Optional)</Label>
+                        <Textarea 
+                          value={relNotes} 
+                          onChange={e => setRelNotes(e.target.value)} 
+                          placeholder="Additional context about this relationship..."
+                          rows={2}
+                          data-testid="input-relationship-notes"
+                        />
+                      </div>
+                      <DialogFooter>
+                        <Button type="submit" disabled={!relToPartyId} data-testid="button-submit-relationship">
+                          Add Relationship
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+              
+              {relatedRelationships.length > 0 ? (
+                <div className="space-y-3">
+                  {relatedRelationships.map(rel => {
+                    const relatedParty = getRelatedParty(rel);
+                    const direction = getRelationshipDirection(rel);
+                    if (!relatedParty) return null;
+                    
+                    return (
+                      <div key={rel.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors" data-testid={`relationship-${rel.id}`}>
+                        <div className="flex items-center gap-4">
+                          <div className="h-10 w-10 bg-primary/10 flex items-center justify-center rounded-full">
+                            <Users className="h-5 w-5 text-primary" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <Link href={`/parties/${relatedParty.id}`}>
+                                <span className="font-medium text-sm text-primary hover:underline cursor-pointer">{relatedParty.name}</span>
+                              </Link>
+                              <Badge variant="outline" className="text-[10px]">{relatedParty.type}</Badge>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="secondary" className="text-[10px]">
+                                {direction === "outgoing" ? `→ ${rel.relationshipType}` : `← ${rel.relationshipType}`}
+                              </Badge>
+                              {rel.notes && <span className="text-xs text-muted-foreground italic">{rel.notes}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleRemoveRelationship(rel.id)}
+                          data-testid={`button-remove-relationship-${rel.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
+                  <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No relationships defined yet.</p>
+                  <p className="text-xs mt-1">Link this party to parent companies, subsidiaries, or guarantors.</p>
                 </div>
               )}
             </TabsContent>

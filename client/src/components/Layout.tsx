@@ -11,18 +11,31 @@ import {
   LogOut,
   Shield
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/auth";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { WorkDigitalLogo } from "./WorkDigitalLogo";
+import { GlobalSearch } from "./GlobalSearch";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const { user, logout } = useAuth();
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const navItems = [
     { label: "Dashboard", icon: LayoutDashboard, href: "/" },
@@ -89,14 +102,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Main Content */}
       <main className="flex-1 md:ml-64 min-h-screen flex flex-col">
         <header className="h-16 border-b bg-card/50 backdrop-blur-sm px-8 flex items-center justify-between sticky top-0 z-40">
-          <div className="flex items-center gap-4 w-full max-w-md text-muted-foreground">
+          <button 
+            onClick={() => setIsSearchOpen(true)}
+            className="flex items-center gap-3 w-full max-w-md text-muted-foreground bg-muted/50 hover:bg-muted rounded-md px-3 py-2 transition-colors"
+            data-testid="button-global-search"
+          >
             <Search className="h-4 w-4" />
-            <input 
-              type="text" 
-              placeholder="Search agreements, parties, or documents..." 
-              className="bg-transparent border-none focus:outline-none text-sm w-full placeholder:text-muted-foreground/70"
-            />
-          </div>
+            <span className="text-sm flex-1 text-left">Search everything...</span>
+            <kbd className="hidden sm:inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] text-muted-foreground">
+              <span className="text-xs">⌘</span>K
+            </kbd>
+          </button>
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" className="text-muted-foreground">
               <Bell className="h-5 w-5" />
@@ -134,6 +150,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </main>
+
+      <GlobalSearch open={isSearchOpen} onOpenChange={setIsSearchOpen} />
     </div>
   );
 }

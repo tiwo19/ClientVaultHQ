@@ -389,5 +389,43 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== PARTY RELATIONSHIP ROUTES ====================
+
+  app.get("/api/party-relationships", requireAuth, async (req, res) => {
+    try {
+      const relationships = await storage.getAllPartyRelationships();
+      res.json(relationships);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/party-relationships/party/:partyId", requireAuth, async (req, res) => {
+    try {
+      const relationships = await storage.getPartyRelationshipsByParty(req.params.partyId);
+      res.json(relationships);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/party-relationships", requireAuth, async (req, res) => {
+    try {
+      const relationship = await storage.createPartyRelationship(req.body);
+      res.json(relationship);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/party-relationships/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deletePartyRelationship(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

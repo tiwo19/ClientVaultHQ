@@ -6,9 +6,10 @@ import {
   type Agreement, type InsertAgreement,
   type Activity, type InsertActivity,
   type Document, type InsertDocument,
-  users, parties, persons, agreements, activities, documents
+  type PartyRelationship, type InsertPartyRelationship,
+  users, parties, persons, agreements, activities, documents, partyRelationships
 } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -47,6 +48,12 @@ export interface IStorage {
   getDocumentsByAgreement(agreementId: string): Promise<Document[]>;
   createDocument(doc: InsertDocument): Promise<Document>;
   deleteDocument(id: string): Promise<void>;
+
+  // Party Relationships
+  getAllPartyRelationships(): Promise<PartyRelationship[]>;
+  getPartyRelationshipsByParty(partyId: string): Promise<PartyRelationship[]>;
+  createPartyRelationship(rel: InsertPartyRelationship): Promise<PartyRelationship>;
+  deletePartyRelationship(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -174,6 +181,29 @@ export class DbStorage implements IStorage {
 
   async deleteDocument(id: string): Promise<void> {
     await db.delete(documents).where(eq(documents.id, id));
+  }
+
+  // Party Relationships
+  async getAllPartyRelationships(): Promise<PartyRelationship[]> {
+    return await db.select().from(partyRelationships);
+  }
+
+  async getPartyRelationshipsByParty(partyId: string): Promise<PartyRelationship[]> {
+    return await db.select().from(partyRelationships).where(
+      or(
+        eq(partyRelationships.fromPartyId, partyId),
+        eq(partyRelationships.toPartyId, partyId)
+      )
+    );
+  }
+
+  async createPartyRelationship(rel: InsertPartyRelationship): Promise<PartyRelationship> {
+    const result = await db.insert(partyRelationships).values(rel).returning();
+    return result[0];
+  }
+
+  async deletePartyRelationship(id: string): Promise<void> {
+    await db.delete(partyRelationships).where(eq(partyRelationships.id, id));
   }
 }
 

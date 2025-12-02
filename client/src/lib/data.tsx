@@ -1,7 +1,7 @@
 import { createContext, useContext, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "./api";
-import type { Party, Agreement, Document, Person, Activity } from "@shared/schema";
+import type { Party, Agreement, Document, Person, Activity, PartyRelationship } from "@shared/schema";
 
 interface DataContextType {
   // Queries
@@ -10,6 +10,7 @@ interface DataContextType {
   documents: Document[];
   persons: Person[];
   activities: Activity[];
+  partyRelationships: PartyRelationship[];
   isLoading: boolean;
 
   // Mutations
@@ -20,6 +21,7 @@ interface DataContextType {
   addAgreement: (agreement: Omit<Agreement, "id">) => Promise<Agreement>;
   updateAgreement: (id: string, data: Partial<Agreement>) => Promise<Agreement>;
   removeAgreement: (id: string) => Promise<void>;
+  bulkUpdateAgreementStatus: (ids: string[], status: string) => Promise<void>;
   
   addDocument: (doc: { agreementId?: string; partyId?: string; name: string; type: string; category?: string; expirationDate?: string; notes?: string; file?: File }) => Promise<void>;
   removeDocument: (id: string) => Promise<void>;
@@ -28,6 +30,9 @@ interface DataContextType {
   removePerson: (id: string) => Promise<void>;
 
   addActivity: (activity: api.ActivityData) => Promise<void>;
+
+  addPartyRelationship: (rel: api.PartyRelationshipData) => Promise<void>;
+  removePartyRelationship: (id: string) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | null>(null);
@@ -61,7 +66,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     queryFn: api.fetchActivities
   });
 
-  const isLoading = partiesLoading || agreementsLoading || documentsLoading || personsLoading || activitiesLoading;
+  const { data: partyRelationships = [], isLoading: relationshipsLoading } = useQuery({
+    queryKey: ["partyRelationships"],
+    queryFn: api.fetchPartyRelationships
+  });
+
+  const isLoading = partiesLoading || agreementsLoading || documentsLoading || personsLoading || activitiesLoading || relationshipsLoading;
 
   // Mutations
   const addPartyMutation = useMutation({
@@ -205,6 +215,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
     await addActivityMutation.mutateAsync(activity);
   };
 
+  // Party Relationships
+  const addPartyRelationshipMutation = useMutation({
+    mutationFn: api.createPartyRelationship,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["partyRelationships"] });
+    }
+  });
+
+  const removePartyRelationshipMutation = useMutation({
+    mutationFn: api.deletePartyRelationship,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["partyRelationships"] });
+    }
+  });
+
+  const addPartyRelationship = async (rel: api.PartyRelationshipData) => {
+    await addPartyRelationshipMutation.mutateAsync(rel);
+  };
+
+  const removePartyRelationship = async (id: string) => {
+    await removePartyRelationshipMutation.mutateAsync(id);
+  };
+
+  // Bulk operations
+  const bulkUpdateMutation = useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: string }) => 
+      api.bulkUpdateAgreementStatus(ids, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agreements"] });
+    }
+  });
+
+  const bulkUpdateAgreementStatus = async (ids: string[], status: string) => {
+    await bulkUpdateMutation.mutateAsync({ ids, status });
+  };
+
   return (
     <DataContext.Provider value={{
       parties,
@@ -212,6 +258,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       documents,
       persons,
       activities,
+      partyRelationships,
       isLoading,
       addParty,
       updateParty,
@@ -219,11 +266,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       addAgreement,
       updateAgreement,
       removeAgreement,
+      bulkUpdateAgreementStatus,
       addDocument,
       removeDocument,
       addPerson,
       removePerson,
-      addActivity
+      addActivity,
+      addPartyRelationship,
+      removePartyRelationship
     }}>
       {children}
     </DataContext.Provider>
