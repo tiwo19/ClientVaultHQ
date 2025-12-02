@@ -23,6 +23,7 @@ interface DataContextType {
   removeDocument: (id: string) => Promise<void>;
 
   addPerson: (person: Omit<Person, "id">) => Promise<void>;
+  removePerson: (id: string) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | null>(null);
@@ -145,9 +146,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
     await removeDocumentMutation.mutateAsync(id);
   };
 
+  const addPersonMutation = useMutation({
+    mutationFn: api.createPerson,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["persons"] });
+    }
+  });
+
+  const removePersonMutation = useMutation({
+    mutationFn: api.deletePerson,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["persons"] });
+    }
+  });
+
   const addPerson = async (person: Omit<Person, "id">) => {
-    // TODO: Implement person creation endpoint
-    console.log("Person creation not yet implemented:", person);
+    await addPersonMutation.mutateAsync(person);
+  };
+
+  const removePerson = async (id: string) => {
+    await removePersonMutation.mutateAsync(id);
   };
 
   return (
@@ -164,7 +182,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       removeAgreement,
       addDocument,
       removeDocument,
-      addPerson
+      addPerson,
+      removePerson
     }}>
       {children}
     </DataContext.Provider>

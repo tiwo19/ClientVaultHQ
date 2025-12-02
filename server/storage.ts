@@ -105,6 +105,10 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  async deletePerson(id: string): Promise<void> {
+    await db.delete(persons).where(eq(persons.id, id));
+  }
+
   // Agreements
   async getAllAgreements(): Promise<Agreement[]> {
     return await db.select().from(agreements);

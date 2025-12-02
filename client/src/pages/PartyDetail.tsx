@@ -102,7 +102,7 @@ function getActivityColor(type: string) {
 export default function PartyDetail() {
   const [, params] = useRoute("/parties/:id");
   const id = params?.id;
-  const { parties, persons, agreements, documents, activities, addDocument, removeDocument, isLoading } = useData();
+  const { parties, persons, agreements, documents, activities, addDocument, removeDocument, addPerson, removePerson, isLoading } = useData();
   const { toast } = useToast();
   
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -110,6 +110,12 @@ export default function PartyDetail() {
   const [uploadCategory, setUploadCategory] = useState<DocumentCategory>("Other");
   const [uploadExpiration, setUploadExpiration] = useState("");
   const [uploadNotes, setUploadNotes] = useState("");
+  
+  const [isAddContactOpen, setIsAddContactOpen] = useState(false);
+  const [contactName, setContactName] = useState("");
+  const [contactRole, setContactRole] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
 
   const party = parties.find(p => p.id === id);
   
@@ -162,6 +168,45 @@ export default function PartyDetail() {
     setUploadCategory("Other");
     setUploadExpiration("");
     setUploadNotes("");
+  };
+
+  const handleAddContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+
+    try {
+      await addPerson({
+        partyId: id,
+        name: contactName,
+        role: contactRole,
+        email: contactEmail,
+        phone: contactPhone
+      });
+      
+      setIsAddContactOpen(false);
+      resetContactForm();
+      toast({ title: "Contact Added", description: `${contactName} has been added as a contact.` });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to add contact.", variant: "destructive" });
+    }
+  };
+
+  const resetContactForm = () => {
+    setContactName("");
+    setContactRole("");
+    setContactEmail("");
+    setContactPhone("");
+  };
+
+  const handleDeleteContact = async (personId: string, personName: string) => {
+    if (confirm(`Are you sure you want to remove ${personName} as a contact?`)) {
+      try {
+        await removePerson(personId);
+        toast({ title: "Contact Removed" });
+      } catch (error) {
+        toast({ title: "Error", description: "Failed to remove contact.", variant: "destructive" });
+      }
+    }
   };
 
   const handleDeleteDoc = async (docId: string) => {
@@ -479,20 +524,107 @@ export default function PartyDetail() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-base">Key Contacts</CardTitle>
-              <Button variant="ghost" size="icon" className="h-8 w-8"><Plus className="h-4 w-4" /></Button>
+              <Dialog open={isAddContactOpen} onOpenChange={setIsAddContactOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-add-contact">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Add Contact</DialogTitle>
+                    <DialogDescription>
+                      Add a new contact person for this party.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleAddContact} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Name</Label>
+                      <Input 
+                        value={contactName} 
+                        onChange={e => setContactName(e.target.value)} 
+                        required 
+                        placeholder="John Smith"
+                        data-testid="input-contact-name"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Role</Label>
+                      <Input 
+                        value={contactRole} 
+                        onChange={e => setContactRole(e.target.value)} 
+                        required 
+                        placeholder="CFO, Legal Counsel, etc."
+                        data-testid="input-contact-role"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Email</Label>
+                        <Input 
+                          type="email"
+                          value={contactEmail} 
+                          onChange={e => setContactEmail(e.target.value)} 
+                          required 
+                          placeholder="john@company.com"
+                          data-testid="input-contact-email"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Phone</Label>
+                        <Input 
+                          value={contactPhone} 
+                          onChange={e => setContactPhone(e.target.value)} 
+                          required 
+                          placeholder="(555) 123-4567"
+                          data-testid="input-contact-phone"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button type="submit" data-testid="button-submit-contact">Add Contact</Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </CardHeader>
             <CardContent>
               {relatedPersons.length > 0 ? (
                 <div className="space-y-4">
                   {relatedPersons.map(person => (
-                    <div key={person.id} className="flex items-center gap-3">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback>{person.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="text-sm font-medium">{person.name}</p>
-                        <p className="text-xs text-muted-foreground">{person.role}</p>
+                    <div key={person.id} className="flex items-center justify-between group" data-testid={`contact-${person.id}`}>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback>{person.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="text-sm font-medium">{person.name}</p>
+                          <p className="text-xs text-muted-foreground">{person.role}</p>
+                          <div className="flex items-center gap-3 mt-1">
+                            {person.email && (
+                              <a href={`mailto:${person.email}`} className="text-xs text-primary hover:underline flex items-center gap-1">
+                                <Mail className="h-3 w-3" />
+                                {person.email}
+                              </a>
+                            )}
+                            {person.phone && (
+                              <a href={`tel:${person.phone}`} className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {person.phone}
+                              </a>
+                            )}
+                          </div>
+                        </div>
                       </div>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleDeleteContact(person.id, person.name)}
+                        data-testid={`button-delete-contact-${person.id}`}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
                     </div>
                   ))}
                 </div>

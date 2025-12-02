@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertPartySchema, insertAgreementSchema, insertDocumentSchema } from "@shared/schema";
+import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertDocumentSchema } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import session from "express-session";
@@ -182,6 +182,28 @@ export async function registerRoutes(
     try {
       const persons = await storage.getAllPersons();
       res.json(persons);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/persons", requireAuth, async (req, res) => {
+    try {
+      const personData = insertPersonSchema.parse(req.body);
+      const person = await storage.createPerson(personData);
+      res.json(person);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/persons/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deletePerson(req.params.id);
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

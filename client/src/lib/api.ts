@@ -94,6 +94,24 @@ export async function fetchPersons() {
   return handleResponse(response);
 }
 
+export async function createPerson(personData: { partyId: string; name: string; role: string; email: string; phone: string }) {
+  const response = await fetch(`${API_URL}/persons`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(personData),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+export async function deletePerson(id: string) {
+  const response = await fetch(`${API_URL}/persons/${id}`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
 // ==================== AGREEMENTS ====================
 
 export async function fetchAgreements() {
