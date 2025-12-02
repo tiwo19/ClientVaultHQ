@@ -1,4 +1,4 @@
-import { agreements, parties, activities, documents, persons } from "@/lib/mockData";
+import { useData } from "@/lib/data";
 import { useRoute } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { 
   Calendar, 
   DollarSign, 
@@ -16,14 +19,23 @@ import {
   Plus, 
   Phone, 
   Mail,
-  AlertTriangle
+  AlertTriangle,
+  Upload,
+  Trash2
 } from "lucide-react";
 import { format } from "date-fns";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function AgreementDetail() {
   const [, params] = useRoute("/agreements/:id");
   const id = params?.id;
+  const { agreements, parties, activities, documents, persons, addDocument, removeDocument } = useData();
+  const { toast } = useToast();
   
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+
   const agreement = agreements.find(a => a.id === id);
   
   if (!agreement) {
@@ -36,6 +48,29 @@ export default function AgreementDetail() {
   const relatedPersons = persons.filter(p => p.partyId === agreement.partyId);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+
+  const handleUpload = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadFile) return;
+
+    addDocument({
+      agreementId: id,
+      partyId: agreement.partyId,
+      name: uploadFile.name,
+      type: "PDF"
+    });
+    
+    setIsUploadOpen(false);
+    setUploadFile(null);
+    toast({ title: "Document Uploaded", description: "File has been attached to the agreement." });
+  };
+
+  const handleDeleteDoc = (docId: string) => {
+    if (confirm("Are you sure you want to delete this document?")) {
+      removeDocument(docId);
+      toast({ title: "Document Removed" });
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -183,11 +218,36 @@ export default function AgreementDetail() {
             </TabsContent>
 
             <TabsContent value="documents" className="pt-6">
+              <div className="flex justify-end mb-4">
+                <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm">
+                      <Upload className="mr-2 h-4 w-4" />
+                      Upload Document
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Upload Document</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleUpload} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>File</Label>
+                        <Input type="file" onChange={e => setUploadFile(e.target.files?.[0] || null)} required />
+                      </div>
+                      <DialogFooter>
+                        <Button type="submit">Upload</Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
               <Card>
                 <CardContent className="p-0">
                   <div className="divide-y">
                     {relatedDocuments.map(doc => (
-                      <div key={doc.id} className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                      <div key={doc.id} className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors group">
                         <div className="flex items-center gap-4">
                           <div className="h-10 w-10 bg-muted flex items-center justify-center rounded">
                             <FileText className="h-5 w-5 text-muted-foreground" />
@@ -197,9 +257,14 @@ export default function AgreementDetail() {
                             <p className="text-xs text-muted-foreground">Uploaded {format(new Date(doc.dateUploaded), 'MMM d, yyyy')}</p>
                           </div>
                         </div>
-                        <Button variant="ghost" size="sm">
-                          <Download className="h-4 w-4 mr-2" /> Download
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button variant="ghost" size="sm">
+                            <Download className="h-4 w-4 mr-2" /> Download
+                          </Button>
+                          <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleDeleteDoc(doc.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </div>
                     ))}
                     {relatedDocuments.length === 0 && (

@@ -12,6 +12,7 @@ import Login from "@/pages/Login";
 import AdminUsers from "@/pages/AdminUsers";
 import NotFound from "@/pages/not-found";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { DataProvider } from "@/lib/data";
 import { useEffect } from "react";
 
 // Protected Route Wrapper
@@ -66,10 +67,12 @@ function Router() {
 function App() {
   return (
     <AuthProvider>
-      <QueryClientProvider client={queryClient}>
-        <Toaster />
-        <Router />
-      </QueryClientProvider>
+      <DataProvider>
+        <QueryClientProvider client={queryClient}>
+          <Toaster />
+          <Router />
+        </QueryClientProvider>
+      </DataProvider>
     </AuthProvider>
   );
 }
