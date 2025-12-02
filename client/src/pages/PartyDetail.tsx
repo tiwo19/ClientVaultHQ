@@ -26,7 +26,13 @@ import {
   Shield,
   Calendar,
   AlertTriangle,
-  FileCheck
+  FileCheck,
+  Clock,
+  MessageSquare,
+  Video,
+  Send,
+  FileEdit,
+  Gavel
 } from "lucide-react";
 import { format } from "date-fns";
 import { useState } from "react";
@@ -69,10 +75,34 @@ function getCategoryIcon(category: string) {
   return <FileText className="h-4 w-4" />;
 }
 
+function getActivityIcon(type: string) {
+  switch (type) {
+    case "Call": return <Phone className="h-4 w-4" />;
+    case "Email": return <Mail className="h-4 w-4" />;
+    case "Meeting": return <Video className="h-4 w-4" />;
+    case "LetterSent": return <Send className="h-4 w-4" />;
+    case "InternalNote": return <FileEdit className="h-4 w-4" />;
+    case "CourtFiling": return <Gavel className="h-4 w-4" />;
+    default: return <MessageSquare className="h-4 w-4" />;
+  }
+}
+
+function getActivityColor(type: string) {
+  switch (type) {
+    case "Call": return "bg-blue-500";
+    case "Email": return "bg-green-500";
+    case "Meeting": return "bg-purple-500";
+    case "LetterSent": return "bg-orange-500";
+    case "InternalNote": return "bg-gray-500";
+    case "CourtFiling": return "bg-red-500";
+    default: return "bg-primary";
+  }
+}
+
 export default function PartyDetail() {
   const [, params] = useRoute("/parties/:id");
   const id = params?.id;
-  const { parties, persons, agreements, documents, addDocument, removeDocument, isLoading } = useData();
+  const { parties, persons, agreements, documents, activities, addDocument, removeDocument, isLoading } = useData();
   const { toast } = useToast();
   
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -98,6 +128,11 @@ export default function PartyDetail() {
   const identityDocs = partyDocuments.filter(d => IDENTITY_CATEGORIES.some(c => c.value === d.category));
   const corporateDocs = partyDocuments.filter(d => CORPORATE_CATEGORIES.some(c => c.value === d.category));
   const otherDocs = partyDocuments.filter(d => !IDENTITY_CATEGORIES.some(c => c.value === d.category) && !CORPORATE_CATEGORIES.some(c => c.value === d.category));
+
+  const relatedAgreementIds = relatedAgreements.map(a => a.id);
+  const partyActivities = activities
+    .filter(a => a.partyId === id || (a.agreementId && relatedAgreementIds.includes(a.agreementId)))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -293,8 +328,12 @@ export default function PartyDetail() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <Tabs defaultValue="identity" className="w-full">
+          <Tabs defaultValue="timeline" className="w-full">
             <TabsList className="w-full justify-start border-b rounded-none h-auto p-0 bg-transparent gap-6">
+              <TabsTrigger value="timeline" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3">
+                <Clock className="h-4 w-4 mr-2" />
+                Timeline ({partyActivities.length})
+              </TabsTrigger>
               <TabsTrigger value="identity" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3">
                 <User className="h-4 w-4 mr-2" />
                 Identity ({identityDocs.length})
@@ -309,6 +348,60 @@ export default function PartyDetail() {
               </TabsTrigger>
             </TabsList>
             
+            <TabsContent value="timeline" className="pt-6">
+              {partyActivities.length > 0 ? (
+                <div className="relative">
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
+                  <div className="space-y-6">
+                    {partyActivities.map((activity, index) => {
+                      const linkedAgreement = activity.agreementId 
+                        ? relatedAgreements.find(a => a.id === activity.agreementId)
+                        : null;
+                      
+                      return (
+                        <div key={activity.id} className="relative pl-10" data-testid={`timeline-item-${activity.id}`}>
+                          <div className={`absolute left-2 w-5 h-5 rounded-full flex items-center justify-center text-white ${getActivityColor(activity.type)}`}>
+                            {getActivityIcon(activity.type)}
+                          </div>
+                          <Card className="hover:shadow-md transition-shadow">
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className="text-[10px] uppercase">
+                                    {activity.type.replace(/([A-Z])/g, ' $1').trim()}
+                                  </Badge>
+                                  {linkedAgreement && (
+                                    <Link href={`/agreements/${linkedAgreement.id}`}>
+                                      <Badge variant="secondary" className="text-[10px] cursor-pointer hover:bg-primary/20">
+                                        {linkedAgreement.title}
+                                      </Badge>
+                                    </Link>
+                                  )}
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                  {format(new Date(activity.date), 'MMM d, yyyy h:mm a')}
+                                </span>
+                              </div>
+                              <p className="text-sm text-foreground">{activity.content}</p>
+                              <p className="text-xs text-muted-foreground mt-2">
+                                by {activity.user}
+                              </p>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
+                  <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No activities recorded yet.</p>
+                  <p className="text-xs mt-1">Calls, emails, meetings, and notes will appear here.</p>
+                </div>
+              )}
+            </TabsContent>
+
             <TabsContent value="identity" className="pt-6 space-y-3">
               {identityDocs.length > 0 ? (
                 identityDocs.map(doc => <DocumentCard key={doc.id} doc={doc} />)
