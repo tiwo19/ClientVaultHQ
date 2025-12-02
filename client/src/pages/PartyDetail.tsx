@@ -32,10 +32,11 @@ import {
   Video,
   Send,
   FileEdit,
-  Gavel
+  Gavel,
+  Pencil
 } from "lucide-react";
 import { format } from "date-fns";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { getDocumentDownloadUrl } from "@/lib/api";
 import { DocumentCategory } from "@/lib/mockData";
@@ -102,7 +103,7 @@ function getActivityColor(type: string) {
 export default function PartyDetail() {
   const [, params] = useRoute("/parties/:id");
   const id = params?.id;
-  const { parties, persons, agreements, documents, activities, addDocument, removeDocument, addPerson, removePerson, addActivity, isLoading } = useData();
+  const { parties, persons, agreements, documents, activities, addDocument, removeDocument, addPerson, removePerson, addActivity, updateParty, isLoading } = useData();
   const { toast } = useToast();
   
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -122,7 +123,30 @@ export default function PartyDetail() {
   const [activityContent, setActivityContent] = useState("");
   const [activityDate, setActivityDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editType, setEditType] = useState("Company");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editTaxId, setEditTaxId] = useState("");
+  const [editJurisdiction, setEditJurisdiction] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+
   const party = parties.find(p => p.id === id);
+  
+  useEffect(() => {
+    if (party) {
+      setEditName(party.name);
+      setEditType(party.type);
+      setEditEmail(party.email || "");
+      setEditPhone(party.phone || "");
+      setEditAddress(party.address || "");
+      setEditTaxId(party.taxId || "");
+      setEditJurisdiction(party.jurisdictionOfFormation || "");
+      setEditNotes(party.notes || "");
+    }
+  }, [party]);
   
   if (isLoading) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
@@ -252,6 +276,28 @@ export default function PartyDetail() {
     }
   };
 
+  const handleEditParty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+
+    try {
+      await updateParty(id, {
+        name: editName,
+        type: editType as any,
+        email: editEmail || null,
+        phone: editPhone || null,
+        address: editAddress || null,
+        taxId: editTaxId || null,
+        jurisdictionOfFormation: editJurisdiction || null,
+        notes: editNotes || null
+      });
+      setIsEditOpen(false);
+      toast({ title: "Party Updated", description: "Changes have been saved." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to update party.", variant: "destructive" });
+    }
+  };
+
   const isExpiringSoon = (expirationDate: string | null | undefined) => {
     if (!expirationDate) return false;
     const expDate = new Date(expirationDate);
@@ -325,20 +371,131 @@ export default function PartyDetail() {
           </p>
         </div>
         
-        <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Upload className="mr-2 h-4 w-4" />
-              Upload Document
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Upload Document</DialogTitle>
-              <DialogDescription>
-                Add identity or corporate documents to this party.
-              </DialogDescription>
-            </DialogHeader>
+        <div className="flex gap-2">
+          <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" data-testid="button-edit-party">
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit Party
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Edit Party</DialogTitle>
+                <DialogDescription>
+                  Update party information.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleEditParty} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Party Name</Label>
+                  <Input 
+                    value={editName} 
+                    onChange={e => setEditName(e.target.value)} 
+                    required 
+                    data-testid="input-edit-party-name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Party Type</Label>
+                  <Select value={editType} onValueChange={setEditType}>
+                    <SelectTrigger data-testid="select-edit-party-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Company">Company</SelectItem>
+                      <SelectItem value="Individual">Individual</SelectItem>
+                      <SelectItem value="Trust">Trust</SelectItem>
+                      <SelectItem value="Bank">Bank</SelectItem>
+                      <SelectItem value="Fund">Fund</SelectItem>
+                      <SelectItem value="JVPartner">JV Partner</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Email</Label>
+                    <Input 
+                      type="email"
+                      value={editEmail} 
+                      onChange={e => setEditEmail(e.target.value)}
+                      data-testid="input-edit-party-email"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Phone</Label>
+                    <Input 
+                      value={editPhone} 
+                      onChange={e => setEditPhone(e.target.value)}
+                      data-testid="input-edit-party-phone"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Address</Label>
+                  <Input 
+                    value={editAddress} 
+                    onChange={e => setEditAddress(e.target.value)}
+                    data-testid="input-edit-party-address"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Tax ID / EIN</Label>
+                    <Input 
+                      value={editTaxId} 
+                      onChange={e => setEditTaxId(e.target.value)}
+                      data-testid="input-edit-party-taxid"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Jurisdiction</Label>
+                    <Input 
+                      value={editJurisdiction} 
+                      onChange={e => setEditJurisdiction(e.target.value)}
+                      placeholder="e.g. Delaware"
+                      data-testid="input-edit-party-jurisdiction"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea 
+                    value={editNotes} 
+                    onChange={e => setEditNotes(e.target.value)}
+                    placeholder="Internal notes about this party..."
+                    rows={3}
+                    data-testid="input-edit-party-notes"
+                  />
+                </div>
+
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
+                  <Button type="submit" data-testid="button-save-party">Save Changes</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Document
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Upload Document</DialogTitle>
+                <DialogDescription>
+                  Add identity or corporate documents to this party.
+                </DialogDescription>
+              </DialogHeader>
             <form onSubmit={handleUpload} className="space-y-4">
               <div className="space-y-2">
                 <Label>Document Type</Label>
@@ -401,6 +558,7 @@ export default function PartyDetail() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

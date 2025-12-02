@@ -22,6 +22,7 @@ export interface IStorage {
   getAllParties(): Promise<Party[]>;
   getParty(id: string): Promise<Party | undefined>;
   createParty(party: InsertParty): Promise<Party>;
+  updateParty(id: string, party: Partial<InsertParty>): Promise<Party | undefined>;
   deleteParty(id: string): Promise<void>;
 
   // Persons
@@ -33,6 +34,7 @@ export interface IStorage {
   getAllAgreements(): Promise<Agreement[]>;
   getAgreement(id: string): Promise<Agreement | undefined>;
   createAgreement(agreement: InsertAgreement): Promise<Agreement>;
+  updateAgreement(id: string, agreement: Partial<InsertAgreement>): Promise<Agreement | undefined>;
   deleteAgreement(id: string): Promise<void>;
 
   // Activities
@@ -87,6 +89,11 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  async updateParty(id: string, party: Partial<InsertParty>): Promise<Party | undefined> {
+    const result = await db.update(parties).set(party).where(eq(parties.id, id)).returning();
+    return result[0];
+  }
+
   async deleteParty(id: string): Promise<void> {
     await db.delete(parties).where(eq(parties.id, id));
   }
@@ -121,6 +128,11 @@ export class DbStorage implements IStorage {
 
   async createAgreement(agreement: InsertAgreement): Promise<Agreement> {
     const result = await db.insert(agreements).values(agreement).returning();
+    return result[0];
+  }
+
+  async updateAgreement(id: string, agreement: Partial<InsertAgreement>): Promise<Agreement | undefined> {
+    const result = await db.update(agreements).set(agreement).where(eq(agreements.id, id)).returning();
     return result[0];
   }
 

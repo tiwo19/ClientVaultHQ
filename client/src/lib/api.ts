@@ -79,6 +79,16 @@ export async function createParty(partyData: any) {
   return handleResponse(response);
 }
 
+export async function updateParty(id: string, partyData: any) {
+  const response = await fetch(`${API_URL}/parties/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(partyData),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
 export async function deleteParty(id: string) {
   const response = await fetch(`${API_URL}/parties/${id}`, {
     method: "DELETE",
@@ -127,6 +137,16 @@ export async function fetchAgreement(id: string) {
 export async function createAgreement(agreementData: any) {
   const response = await fetch(`${API_URL}/agreements`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(agreementData),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+export async function updateAgreement(id: string, agreementData: any) {
+  const response = await fetch(`${API_URL}/agreements/${id}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(agreementData),
     credentials: "include"

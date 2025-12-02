@@ -1,6 +1,32 @@
 import { useData } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, Users, FileText, AlertTriangle, Loader2 } from "lucide-react";
+import { DollarSign, Users, FileText, AlertTriangle, Loader2, TrendingUp } from "lucide-react";
+import { useMemo } from "react";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Legend
+} from "recharts";
+
+const STATUS_COLORS: Record<string, string> = {
+  Draft: "#94a3b8",
+  Sent: "#60a5fa",
+  Executed: "#818cf8",
+  Performing: "#22c55e",
+  InGracePeriod: "#f59e0b",
+  InDefault: "#ef4444",
+  Settled: "#14b8a6",
+  WrittenOff: "#64748b"
+};
+
+const PARTY_COLORS = ["#1e3a5f", "#c9a227", "#3b82f6", "#8b5cf6", "#ec4899"];
 
 export default function Dashboard() {
   const { agreements, parties, isLoading } = useData();
@@ -10,6 +36,34 @@ export default function Dashboard() {
   const inDefault = agreements.filter(a => a.performanceStatus === "InDefault").length;
   
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
+
+  const statusChartData = useMemo(() => {
+    const statuses = ["Draft", "Sent", "Executed", "Performing", "InGracePeriod", "InDefault", "Settled"];
+    return statuses.map(status => ({
+      name: status.replace(/([A-Z])/g, ' $1').trim(),
+      value: agreements.filter(a => a.performanceStatus === status).length,
+      amount: agreements.filter(a => a.performanceStatus === status).reduce((sum, a) => sum + (a.principalAmount || 0), 0),
+      fill: STATUS_COLORS[status] || "#94a3b8"
+    })).filter(d => d.value > 0);
+  }, [agreements]);
+
+  const partyTypeData = useMemo(() => {
+    const types = ["Company", "Individual", "Trust", "Bank", "JVPartner"];
+    return types.map((type, i) => ({
+      name: type.replace(/([A-Z])/g, ' $1').trim(),
+      count: parties.filter(p => p.type === type).length,
+      fill: PARTY_COLORS[i]
+    })).filter(d => d.count > 0);
+  }, [parties]);
+
+  const agreementTypeData = useMemo(() => {
+    const types = ["Loan", "LOI", "JV", "Lease", "Other"];
+    return types.map(type => ({
+      name: type,
+      count: agreements.filter(a => a.type === type).length,
+      amount: agreements.filter(a => a.type === type).reduce((sum, a) => sum + (a.principalAmount || 0), 0)
+    })).filter(d => d.count > 0);
+  }, [agreements]);
 
   if (isLoading) {
     return (
@@ -72,63 +126,147 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <Card className="h-[400px]">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card data-testid="card-status-chart">
           <CardHeader>
-            <CardTitle>Agreement Status Breakdown</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Agreement Status Distribution
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {["Draft", "Sent", "Executed", "Performing", "InDefault", "Settled", "WrittenOff"].map(status => {
-                const count = agreements.filter(a => a.performanceStatus === status).length;
-                const percentage = agreements.length > 0 ? (count / agreements.length) * 100 : 0;
-                return (
-                  <div key={status} className="space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">{status.replace(/([A-Z])/g, ' $1').trim()}</span>
-                      <span className="font-medium">{count}</span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full ${status === "InDefault" ? "bg-destructive" : status === "Performing" ? "bg-green-500" : "bg-primary"}`}
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {statusChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie
+                    data={statusChartData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    paddingAngle={2}
+                    dataKey="value"
+                    nameKey="name"
+                    label={({ name, value }) => `${name}: ${value}`}
+                    labelLine={false}
+                  >
+                    {statusChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value, name, props) => [
+                      `${value} agreements (${formatCurrency(props.payload.amount)})`,
+                      name
+                    ]}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px'
+                    }}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[280px] flex items-center justify-center text-muted-foreground">
+                No agreements to display
+              </div>
+            )}
           </CardContent>
         </Card>
         
-        <Card className="h-[400px]">
+        <Card data-testid="card-party-chart">
           <CardHeader>
-            <CardTitle>Party Type Distribution</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Party Type Distribution
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {["Company", "Individual", "Trust", "Bank", "JVPartner"].map(type => {
-                const count = parties.filter(p => p.type === type).length;
-                const percentage = parties.length > 0 ? (count / parties.length) * 100 : 0;
-                return (
-                  <div key={type} className="space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">{type.replace(/([A-Z])/g, ' $1').trim()}</span>
-                      <span className="font-medium">{count}</span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div 
-                        className="h-full rounded-full bg-primary"
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {partyTypeData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie
+                    data={partyTypeData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    paddingAngle={2}
+                    dataKey="count"
+                    nameKey="name"
+                    label={({ name, count }) => `${name}: ${count}`}
+                    labelLine={false}
+                  >
+                    {partyTypeData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value) => [`${value} parties`, 'Count']}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px'
+                    }}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[280px] flex items-center justify-center text-muted-foreground">
+                No parties to display
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      <Card data-testid="card-agreement-types">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Agreements by Type
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {agreementTypeData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={agreementTypeData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                  axisLine={{ stroke: 'hsl(var(--border))' }}
+                />
+                <YAxis 
+                  tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                  axisLine={{ stroke: 'hsl(var(--border))' }}
+                />
+                <Tooltip 
+                  formatter={(value, name) => {
+                    if (name === 'count') return [`${value} agreements`, 'Count'];
+                    if (name === 'amount') return [formatCurrency(value as number), 'Principal'];
+                    return [value, name];
+                  }}
+                  contentStyle={{ 
+                    backgroundColor: 'hsl(var(--background))', 
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: '6px'
+                  }}
+                />
+                <Legend />
+                <Bar dataKey="count" name="Count" fill="#1e3a5f" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="amount" name="Principal ($)" fill="#c9a227" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+              No agreement data to display
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

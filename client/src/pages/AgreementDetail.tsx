@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   FileText, 
   Shield, 
@@ -19,23 +21,59 @@ import {
   Mail,
   AlertTriangle,
   Upload,
-  Trash2
+  Trash2,
+  Pencil
 } from "lucide-react";
 import { format } from "date-fns";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { getDocumentDownloadUrl } from "@/lib/api";
 
 export default function AgreementDetail() {
   const [, params] = useRoute("/agreements/:id");
   const id = params?.id;
-  const { agreements, parties, activities, documents, persons, addDocument, removeDocument } = useData();
+  const { agreements, parties, activities, documents, persons, addDocument, removeDocument, updateAgreement } = useData();
   const { toast } = useToast();
   
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  
+  const [editTitle, setEditTitle] = useState("");
+  const [editType, setEditType] = useState("Other");
+  const [editAmount, setEditAmount] = useState("");
+  const [editInterestRate, setEditInterestRate] = useState("");
+  const [editEffectiveDate, setEditEffectiveDate] = useState("");
+  const [editMaturityDate, setEditMaturityDate] = useState("");
+  const [editPerformanceStatus, setEditPerformanceStatus] = useState("Draft");
+  const [editEnforcementStage, setEditEnforcementStage] = useState("None");
+  const [editIsSecured, setEditIsSecured] = useState(false);
+  const [editIsPersonalGuarantee, setEditIsPersonalGuarantee] = useState(false);
+  const [editGoverningLaw, setEditGoverningLaw] = useState("");
+  const [editVenueJurisdiction, setEditVenueJurisdiction] = useState("");
+  const [editInternalOwner, setEditInternalOwner] = useState("");
+  const [editRiskRating, setEditRiskRating] = useState("Low");
 
   const agreement = agreements.find(a => a.id === id);
+  
+  useEffect(() => {
+    if (agreement) {
+      setEditTitle(agreement.title);
+      setEditType(agreement.type);
+      setEditAmount(agreement.principalAmount.toString());
+      setEditInterestRate(agreement.interestRateAnnual?.toString() || "");
+      setEditEffectiveDate(agreement.effectiveDate.split("T")[0]);
+      setEditMaturityDate(agreement.maturityDate?.split("T")[0] || "");
+      setEditPerformanceStatus(agreement.performanceStatus);
+      setEditEnforcementStage(agreement.enforcementStage);
+      setEditIsSecured(agreement.isSecured);
+      setEditIsPersonalGuarantee(agreement.isPersonalGuarantee);
+      setEditGoverningLaw(agreement.governingLaw);
+      setEditVenueJurisdiction(agreement.venueJurisdiction);
+      setEditInternalOwner(agreement.internalOwner);
+      setEditRiskRating(agreement.counterpartyRiskRating);
+    }
+  }, [agreement]);
   
   if (!agreement) {
     return <div className="p-8 text-center">Agreement not found</div>;
@@ -80,6 +118,32 @@ export default function AgreementDetail() {
     }
   };
 
+  const handleEditAgreement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await updateAgreement(agreement.id, {
+        title: editTitle,
+        type: editType as any,
+        principalAmount: parseFloat(editAmount) || 0,
+        interestRateAnnual: editInterestRate ? parseFloat(editInterestRate) : null,
+        effectiveDate: editEffectiveDate,
+        maturityDate: editMaturityDate || null,
+        performanceStatus: editPerformanceStatus as any,
+        enforcementStage: editEnforcementStage as any,
+        isSecured: editIsSecured,
+        isPersonalGuarantee: editIsPersonalGuarantee,
+        governingLaw: editGoverningLaw,
+        venueJurisdiction: editVenueJurisdiction,
+        internalOwner: editInternalOwner,
+        counterpartyRiskRating: editRiskRating as any
+      });
+      setIsEditOpen(false);
+      toast({ title: "Agreement Updated", description: "Changes have been saved." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to update agreement.", variant: "destructive" });
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       {/* Header Section */}
@@ -102,7 +166,198 @@ export default function AgreementDetail() {
         </div>
         
         <div className="flex gap-2">
-          <Button variant="outline">Edit Agreement</Button>
+          <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" data-testid="button-edit-agreement">
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit Agreement
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Edit Agreement</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleEditAgreement} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Title</Label>
+                  <Input 
+                    value={editTitle} 
+                    onChange={e => setEditTitle(e.target.value)} 
+                    required 
+                    data-testid="input-edit-title"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Type</Label>
+                    <Select value={editType} onValueChange={setEditType}>
+                      <SelectTrigger data-testid="select-edit-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Loan">Loan</SelectItem>
+                        <SelectItem value="LOI">LOI</SelectItem>
+                        <SelectItem value="JV">JV</SelectItem>
+                        <SelectItem value="Lease">Lease</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Principal Amount ($)</Label>
+                    <Input 
+                      type="number" 
+                      value={editAmount} 
+                      onChange={e => setEditAmount(e.target.value)} 
+                      required 
+                      data-testid="input-edit-amount"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Interest Rate (Annual %)</Label>
+                    <Input 
+                      type="number" 
+                      step="0.01"
+                      value={editInterestRate} 
+                      onChange={e => setEditInterestRate(e.target.value)} 
+                      placeholder="e.g. 5.5"
+                      data-testid="input-edit-interest-rate"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Risk Rating</Label>
+                    <Select value={editRiskRating} onValueChange={setEditRiskRating}>
+                      <SelectTrigger data-testid="select-edit-risk">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Low">Low</SelectItem>
+                        <SelectItem value="Medium">Medium</SelectItem>
+                        <SelectItem value="High">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Effective Date</Label>
+                    <Input 
+                      type="date" 
+                      value={editEffectiveDate} 
+                      onChange={e => setEditEffectiveDate(e.target.value)} 
+                      required 
+                      data-testid="input-edit-effective-date"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Maturity Date</Label>
+                    <Input 
+                      type="date" 
+                      value={editMaturityDate} 
+                      onChange={e => setEditMaturityDate(e.target.value)}
+                      data-testid="input-edit-maturity-date"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Performance Status</Label>
+                    <Select value={editPerformanceStatus} onValueChange={setEditPerformanceStatus}>
+                      <SelectTrigger data-testid="select-edit-status">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Draft">Draft</SelectItem>
+                        <SelectItem value="Performing">Performing</SelectItem>
+                        <SelectItem value="InDefault">In Default</SelectItem>
+                        <SelectItem value="Settled">Settled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Enforcement Stage</Label>
+                    <Select value={editEnforcementStage} onValueChange={setEditEnforcementStage}>
+                      <SelectTrigger data-testid="select-edit-enforcement">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="None">None</SelectItem>
+                        <SelectItem value="Dunning">Dunning</SelectItem>
+                        <SelectItem value="PreSuit">Pre-Suit</SelectItem>
+                        <SelectItem value="SuitFiled">Suit Filed</SelectItem>
+                        <SelectItem value="Judgment">Judgment</SelectItem>
+                        <SelectItem value="Garnishment">Garnishment</SelectItem>
+                        <SelectItem value="Closed">Closed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Governing Law</Label>
+                    <Input 
+                      value={editGoverningLaw} 
+                      onChange={e => setEditGoverningLaw(e.target.value)}
+                      placeholder="e.g. State of New York"
+                      data-testid="input-edit-governing-law"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Venue / Jurisdiction</Label>
+                    <Input 
+                      value={editVenueJurisdiction} 
+                      onChange={e => setEditVenueJurisdiction(e.target.value)}
+                      placeholder="e.g. New York County"
+                      data-testid="input-edit-venue"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Internal Owner</Label>
+                  <Input 
+                    value={editInternalOwner} 
+                    onChange={e => setEditInternalOwner(e.target.value)}
+                    placeholder="e.g. John Smith"
+                    data-testid="input-edit-owner"
+                  />
+                </div>
+
+                <div className="flex gap-6">
+                  <div className="flex items-center gap-2">
+                    <Checkbox 
+                      id="edit-secured" 
+                      checked={editIsSecured} 
+                      onCheckedChange={(checked) => setEditIsSecured(!!checked)}
+                      data-testid="checkbox-edit-secured"
+                    />
+                    <Label htmlFor="edit-secured" className="cursor-pointer">Secured Agreement</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox 
+                      id="edit-pg" 
+                      checked={editIsPersonalGuarantee} 
+                      onCheckedChange={(checked) => setEditIsPersonalGuarantee(!!checked)}
+                      data-testid="checkbox-edit-pg"
+                    />
+                    <Label htmlFor="edit-pg" className="cursor-pointer">Personal Guarantee</Label>
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
+                  <Button type="submit" data-testid="button-save-agreement">Save Changes</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
           <Button>Add Activity</Button>
         </div>
       </div>

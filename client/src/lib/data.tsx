@@ -14,9 +14,11 @@ interface DataContextType {
 
   // Mutations
   addParty: (party: Omit<Party, "id">) => Promise<void>;
+  updateParty: (id: string, data: Partial<Party>) => Promise<Party>;
   removeParty: (id: string) => Promise<void>;
   
   addAgreement: (agreement: Omit<Agreement, "id">) => Promise<Agreement>;
+  updateAgreement: (id: string, data: Partial<Agreement>) => Promise<Agreement>;
   removeAgreement: (id: string) => Promise<void>;
   
   addDocument: (doc: { agreementId?: string; partyId?: string; name: string; type: string; category?: string; expirationDate?: string; notes?: string; file?: File }) => Promise<void>;
@@ -76,6 +78,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  const updatePartyMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Party> }) => api.updateParty(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["parties"] });
+    }
+  });
+
   const addAgreementMutation = useMutation({
     mutationFn: api.createAgreement,
     onSuccess: () => {
@@ -85,6 +94,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const removeAgreementMutation = useMutation({
     mutationFn: api.deleteAgreement,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agreements"] });
+    }
+  });
+
+  const updateAgreementMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Agreement> }) => api.updateAgreement(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agreements"] });
     }
@@ -113,12 +129,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     await removePartyMutation.mutateAsync(id);
   };
 
+  const updateParty = async (id: string, data: Partial<Party>) => {
+    return await updatePartyMutation.mutateAsync({ id, data });
+  };
+
   const addAgreement = async (agreement: Omit<Agreement, "id">) => {
     return await addAgreementMutation.mutateAsync(agreement);
   };
 
   const removeAgreement = async (id: string) => {
     await removeAgreementMutation.mutateAsync(id);
+  };
+
+  const updateAgreement = async (id: string, data: Partial<Agreement>) => {
+    return await updateAgreementMutation.mutateAsync({ id, data });
   };
 
   const addDocument = async (doc: { 
@@ -190,8 +214,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       activities,
       isLoading,
       addParty,
+      updateParty,
       removeParty,
       addAgreement,
+      updateAgreement,
       removeAgreement,
       addDocument,
       removeDocument,

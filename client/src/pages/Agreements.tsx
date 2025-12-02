@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
+import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 
 type AgreementType = "Loan" | "LOI" | "JV" | "Lease" | "Other";
 
@@ -26,7 +27,7 @@ const STATUS_COLUMNS = [
 ];
 
 export default function Agreements() {
-  const { agreements, parties, addAgreement, addDocument, isLoading } = useData();
+  const { agreements, parties, addAgreement, addDocument, updateAgreement, isLoading } = useData();
   const { user } = useAuth();
   const { toast } = useToast();
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -65,6 +66,32 @@ export default function Agreements() {
   }, [filteredAgreements]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
+
+  const handleDragEnd = async (result: DropResult) => {
+    const { destination, source, draggableId } = result;
+    
+    if (!destination) return;
+    if (destination.droppableId === source.droppableId) return;
+    
+    const newStatus = destination.droppableId;
+    const agreement = agreements.find(a => a.id === draggableId);
+    
+    if (!agreement) return;
+    
+    try {
+      await updateAgreement(draggableId, { performanceStatus: newStatus as any });
+      toast({ 
+        title: "Status Updated", 
+        description: `Moved "${agreement.title}" to ${newStatus.replace(/([A-Z])/g, ' $1').trim()}` 
+      });
+    } catch (error) {
+      toast({ 
+        title: "Error", 
+        description: "Failed to update status.", 
+        variant: "destructive" 
+      });
+    }
+  };
 
   const handleAddAgreement = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,53 +245,75 @@ export default function Agreements() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-x-auto pb-4">
-        <div className="flex gap-4 min-w-max h-full">
-          {STATUS_COLUMNS.map(status => (
-            <div key={status} className="w-80 flex flex-col bg-muted/30 rounded-lg border border-border/50 h-full">
-              <div className="p-3 border-b border-border/50 bg-muted/50 font-medium text-sm text-muted-foreground uppercase tracking-wider flex justify-between items-center">
-                {status.replace(/([A-Z])/g, ' $1').trim()}
-                <span className="bg-background text-foreground px-2 py-0.5 rounded-full text-xs border">
-                  {agreementsByStatus[status].length}
-                </span>
-              </div>
-              
-              <div className="p-3 space-y-3 overflow-y-auto flex-1">
-                {agreementsByStatus[status].map(agreement => (
-                  <Link key={agreement.id} href={`/agreements/${agreement.id}`}>
-                    <Card className="cursor-pointer hover:shadow-md transition-shadow border-l-4 border-l-primary">
-                      <CardHeader className="p-3 pb-0">
-                        <div className="flex justify-between items-start mb-1">
-                          <Badge variant="outline" className="text-[10px] uppercase">{agreement.type}</Badge>
-                          {agreement.isSecured && <Badge variant="secondary" className="text-[10px]">Secured</Badge>}
-                        </div>
-                        <CardTitle className="text-sm font-bold leading-tight text-primary hover:underline">
-                          {agreement.title}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="p-3 pt-2">
-                        <p className="text-xs text-muted-foreground mb-2 font-medium">
-                          {getPartyName(agreement.partyId)}
-                        </p>
-                        <div className="flex justify-between items-center text-xs text-foreground/80 border-t pt-2 mt-2">
-                          <span className="font-mono font-semibold">{formatCurrency(agreement.principalAmount)}</span>
-                          <span className="text-muted-foreground">{new Date(agreement.effectiveDate).toLocaleDateString()}</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
-                ))}
+      <DragDropContext onDragEnd={handleDragEnd}>
+        <div className="flex-1 overflow-x-auto pb-4">
+          <div className="flex gap-4 min-w-max h-full">
+            {STATUS_COLUMNS.map(status => (
+              <div key={status} className="w-80 flex flex-col bg-muted/30 rounded-lg border border-border/50 h-full">
+                <div className="p-3 border-b border-border/50 bg-muted/50 font-medium text-sm text-muted-foreground uppercase tracking-wider flex justify-between items-center">
+                  {status.replace(/([A-Z])/g, ' $1').trim()}
+                  <span className="bg-background text-foreground px-2 py-0.5 rounded-full text-xs border">
+                    {agreementsByStatus[status].length}
+                  </span>
+                </div>
                 
-                {agreementsByStatus[status].length === 0 && (
-                  <div className="text-center py-8 text-xs text-muted-foreground italic border-2 border-dashed border-border rounded-md">
-                    No agreements
-                  </div>
-                )}
+                <Droppable droppableId={status}>
+                  {(provided, snapshot) => (
+                    <div 
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className={`p-3 space-y-3 overflow-y-auto flex-1 transition-colors ${snapshot.isDraggingOver ? 'bg-primary/5' : ''}`}
+                    >
+                      {agreementsByStatus[status].map((agreement, index) => (
+                        <Draggable key={agreement.id} draggableId={agreement.id} index={index}>
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              {...provided.dragHandleProps}
+                              className={`${snapshot.isDragging ? 'opacity-90 shadow-lg' : ''}`}
+                            >
+                              <Link href={`/agreements/${agreement.id}`}>
+                                <Card className="cursor-pointer hover:shadow-md transition-shadow border-l-4 border-l-primary" data-testid={`card-agreement-${agreement.id}`}>
+                                  <CardHeader className="p-3 pb-0">
+                                    <div className="flex justify-between items-start mb-1">
+                                      <Badge variant="outline" className="text-[10px] uppercase">{agreement.type}</Badge>
+                                      {agreement.isSecured && <Badge variant="secondary" className="text-[10px]">Secured</Badge>}
+                                    </div>
+                                    <CardTitle className="text-sm font-bold leading-tight text-primary hover:underline">
+                                      {agreement.title}
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="p-3 pt-2">
+                                    <p className="text-xs text-muted-foreground mb-2 font-medium">
+                                      {getPartyName(agreement.partyId)}
+                                    </p>
+                                    <div className="flex justify-between items-center text-xs text-foreground/80 border-t pt-2 mt-2">
+                                      <span className="font-mono font-semibold">{formatCurrency(agreement.principalAmount)}</span>
+                                      <span className="text-muted-foreground">{new Date(agreement.effectiveDate).toLocaleDateString()}</span>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              </Link>
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                      
+                      {agreementsByStatus[status].length === 0 && (
+                        <div className="text-center py-8 text-xs text-muted-foreground italic border-2 border-dashed border-border rounded-md">
+                          Drop agreements here
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Droppable>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      </DragDropContext>
     </div>
   );
 }

@@ -63,6 +63,18 @@ export async function registerRoutes(
     next();
   };
 
+  // Admin middleware - requires user to be authenticated AND have Admin role
+  const requireAdmin = async (req: any, res: any, next: any) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const user = await storage.getUser(req.session.userId);
+    if (!user || user.role !== "Admin") {
+      return res.status(403).json({ error: "Forbidden: Admin access required" });
+    }
+    next();
+  };
+
   // ==================== AUTH ROUTES ====================
   
   app.post("/api/auth/login", async (req, res) => {
@@ -109,7 +121,7 @@ export async function registerRoutes(
 
   // ==================== USER ROUTES ====================
   
-  app.get("/api/users", requireAuth, async (req, res) => {
+  app.get("/api/users", requireAdmin, async (req, res) => {
     try {
       const users = await storage.getAllUsers();
       const usersWithoutPasswords = users.map(({ password, ...user }) => user);
@@ -119,7 +131,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/users", requireAuth, async (req, res) => {
+  app.post("/api/users", requireAdmin, async (req, res) => {
     try {
       const userData = insertUserSchema.parse(req.body);
       const hashedPassword = await bcrypt.hash(userData.password, 10);
@@ -134,7 +146,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/users/:id", requireAuth, async (req, res) => {
+  app.delete("/api/users/:id", requireAdmin, async (req, res) => {
     try {
       await storage.deleteUser(req.params.id);
       res.json({ success: true });
@@ -167,7 +179,20 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/parties/:id", requireAuth, async (req, res) => {
+  app.put("/api/parties/:id", requireAuth, async (req, res) => {
+    try {
+      const updateData = req.body;
+      const updated = await storage.updateParty(req.params.id, updateData);
+      if (!updated) {
+        return res.status(404).json({ error: "Party not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/parties/:id", requireAdmin, async (req, res) => {
     try {
       await storage.deleteParty(req.params.id);
       res.json({ success: true });
@@ -245,7 +270,20 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/agreements/:id", requireAuth, async (req, res) => {
+  app.put("/api/agreements/:id", requireAuth, async (req, res) => {
+    try {
+      const updateData = req.body;
+      const updated = await storage.updateAgreement(req.params.id, updateData);
+      if (!updated) {
+        return res.status(404).json({ error: "Agreement not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/agreements/:id", requireAdmin, async (req, res) => {
     try {
       await storage.deleteAgreement(req.params.id);
       res.json({ success: true });

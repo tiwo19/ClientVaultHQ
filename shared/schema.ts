@@ -20,10 +20,13 @@ export type User = typeof users.$inferSelect;
 export const parties = pgTable("parties", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  type: text("type").notNull(), // Individual, Company, Trust, Bank, JVPartner
-  email: text("email").notNull(),
-  phone: text("phone").notNull(),
-  address: text("address").notNull(),
+  type: text("type").notNull(), // Individual, Company, Trust, Bank, JVPartner, Fund
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  taxId: text("tax_id"),
+  jurisdictionOfFormation: text("jurisdiction_of_formation"),
+  notes: text("notes"),
 });
 
 export const insertPartySchema = createInsertSchema(parties).omit({ id: true });
