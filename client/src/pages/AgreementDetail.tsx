@@ -201,9 +201,13 @@ export default function AgreementDetail() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Loan">Loan</SelectItem>
-                        <SelectItem value="LOI">LOI</SelectItem>
-                        <SelectItem value="JV">JV</SelectItem>
+                        <SelectItem value="LOI">LOI (Letter of Intent)</SelectItem>
+                        <SelectItem value="JV">JV (Joint Venture)</SelectItem>
                         <SelectItem value="Lease">Lease</SelectItem>
+                        <SelectItem value="Trading">Trading Agreement</SelectItem>
+                        <SelectItem value="Investment">Investment Agreement</SelectItem>
+                        <SelectItem value="PrivatePlacement">Private Placement</SelectItem>
+                        <SelectItem value="ServiceAgreement">Service Agreement</SelectItem>
                         <SelectItem value="Other">Other</SelectItem>
                       </SelectContent>
                     </Select>

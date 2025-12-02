@@ -16,7 +16,7 @@ import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-p
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 
-type AgreementType = "Loan" | "LOI" | "JV" | "Lease" | "Other";
+type AgreementType = "Loan" | "LOI" | "JV" | "Lease" | "Trading" | "Investment" | "PrivatePlacement" | "ServiceAgreement" | "Other";
 
 const STATUS_COLUMNS = [
   "Draft", 
@@ -306,9 +306,13 @@ export default function Agreements() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Loan">Loan</SelectItem>
-                      <SelectItem value="LOI">LOI</SelectItem>
-                      <SelectItem value="JV">JV</SelectItem>
+                      <SelectItem value="LOI">LOI (Letter of Intent)</SelectItem>
+                      <SelectItem value="JV">JV (Joint Venture)</SelectItem>
                       <SelectItem value="Lease">Lease</SelectItem>
+                      <SelectItem value="Trading">Trading Agreement</SelectItem>
+                      <SelectItem value="Investment">Investment Agreement</SelectItem>
+                      <SelectItem value="PrivatePlacement">Private Placement</SelectItem>
+                      <SelectItem value="ServiceAgreement">Service Agreement</SelectItem>
                       <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
