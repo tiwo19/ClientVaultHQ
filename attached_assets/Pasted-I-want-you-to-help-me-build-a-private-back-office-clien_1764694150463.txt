@@ -1,0 +1,349 @@
+I want you to help me build a private back-office client/contract management portal using the open-source project Atomic CRM as a base.
+
+0. Base project to import
+
+Start from this GitHub repo: https://github.com/marmelab/atomic-crm
+
+Assume we will run this inside Replit (Node / React environment) and connect to a hosted Supabase project (NOT Docker).
+
+1. Goal / Use-case
+
+This is not a generic CRM. It is a contracts + investments + collections / litigation prep system for a small group of internal users.
+
+Core things we need to track:
+
+Parties (companies, individuals, trusts, funds, JV partners)
+
+Agreements (contracts, loans, JVs, leases, guarantees, etc.)
+
+Documents (PDFs of contracts, LOIs, dunning letters, demand notes, proofs of payment, etc.)
+
+Activities (emails, calls, meetings, letters sent, internal notes)
+
+Collections / Enforcement stages (dunning workflow, demand letters, litigation progress)
+
+The UI can stay similar to Atomic CRM’s, but we will rename and extend objects and fields to match our domain.
+
+2. Replit environment setup
+
+Please:
+
+Import the atomic-crm repo into this Repl.
+
+Inspect its package.json and figure out how to run the dev server without Docker (e.g. npm install then npm run dev or whatever the repo expects).
+
+Configure the Replit “Run” command accordingly so I can just click Run and see the app in the browser tab.
+
+Assume I will:
+
+Create a Supabase project separately.
+
+Provide you the necessary environment variables via Replit Secrets:
+
+NEXT_PUBLIC_SUPABASE_URL
+
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+SUPABASE_SERVICE_ROLE_KEY (if needed by the backend)
+
+Your job:
+
+Tell me exactly which env vars are required by Atomic CRM.
+
+Show me where in the code they are read.
+
+Make sure the app reads them correctly from Replit’s environment.
+
+If the repo contains SQL or Supabase migration files, guide me to:
+
+Run them in my Supabase project (or paste them into the Supabase SQL editor).
+
+Ensure all required tables / functions are created.
+
+3. Rename / map the CRM concepts
+
+Atomic CRM has typical CRM concepts like accounts/companies/contacts/deals/tasks/notes. I want you to rename and mentally remap them like this in both schema and UI labels:
+
+Company / Account → “Party”
+
+Party types:
+
+Individual
+
+Company / LLC / Corporation
+
+Trust / Fund
+
+Bank / Lender
+
+JV Partner
+
+Keep standard contact fields (name, email, phone, address).
+
+Contact → “Person”
+(Specific individuals associated with Parties: owners, signers, attorneys, etc.)
+
+Deal → “Agreement” or “Contract”
+This is the critical object representing a legal / financial instrument:
+
+Examples: LOI, Loan Agreement, Operating Agreement, Lease, Security Agreement, Personal Guarantee, Investment Subscription, Side Letter.
+
+Tasks / Activities stay as they are, but conceptually they track:
+
+Letters sent (dunning, demand, notices)
+
+Calls, emails, meetings
+
+Filing dates for lawsuits, hearings, etc.
+
+Please:
+
+Update UI labels (menus, column headings, titles) from “Deals / Companies / Contacts” to “Agreements / Parties / Persons” where appropriate.
+
+Keep the code structure intact, but adjust naming for clarity in the interface.
+
+4. Extend the Agreement (Contract) data model
+
+The Agreement object needs additional fields. Please add the following fields to the schema (Supabase) and to the frontend forms and views:
+
+Agreement core fields:
+
+agreementType (string/enum)
+
+Options: LOI, Loan, JV, Lease, ServiceAgreement, SecurityAgreement, Guarantee, Other
+
+principalAmount (numeric)
+
+interestRateAnnual (numeric, nullable)
+
+governingLaw (string)
+
+venueJurisdiction (string)
+
+effectiveDate (date)
+
+maturityDate (date, nullable)
+
+internalOwner (user reference / string) – who internally owns this relationship.
+
+counterpartyRiskRating (string/enum, e.g. Low, Medium, High)
+
+Status fields:
+
+performanceStatus (enum or text)
+
+Pipeline 1 (Active Agreements):
+
+Draft
+
+Sent
+
+Executed
+
+Performing
+
+InGracePeriod
+
+InDefault
+
+Settled
+
+WrittenOff
+
+enforcementStage (enum or text)
+
+Pipeline 2 (Collections/Enforcement):
+
+None
+
+FriendlyReminder
+
+Dunning1
+
+Dunning2
+
+DemandLetter
+
+AttorneyReview
+
+SuitFiled
+
+Judgment
+
+PostJudgmentCollection
+
+Visibility flags:
+
+isClientVisible (boolean, default false)
+
+If we later build a client login view, only Agreements with isClientVisible = true should show on the client side.
+
+isSecured (boolean)
+
+isPersonalGuarantee (boolean)
+
+Please:
+
+Add these fields in the Supabase schema (migrations or SQL).
+
+Wire them into the create/edit Agreement forms.
+
+Show them in the Agreement detail view.
+
+Let me filter / sort Agreements by performanceStatus and enforcementStage.
+
+5. Pipelines / views
+
+I want two main pipelines or views:
+
+Active Agreements Pipeline
+
+Columns driven by performanceStatus:
+
+Draft
+
+Sent
+
+Executed
+
+Performing
+
+In Grace Period
+
+In Default
+
+Settled
+
+Written Off
+
+Show each Agreement card with:
+
+Agreement name/title
+
+Party name(s)
+
+Principal amount
+
+Effective date
+
+Performance status
+
+Collections / Enforcement Pipeline
+
+Columns driven by enforcementStage:
+
+Friendly Reminder
+
+Dunning 1
+
+Dunning 2
+
+Demand Letter
+
+Attorney Review
+
+Suit Filed
+
+Judgment
+
+Post-Judgment Collection
+
+Show each Agreement that has performanceStatus = 'InDefault' OR a non-None enforcementStage.
+
+Implement these as Kanban/board views similar to how Atomic CRM handles pipelines for deals. I should be able to drag cards between columns and have the underlying status fields update.
+
+6. Activities & documents
+
+The existing Atomic CRM already has activity / note / email logging and probably file attachments. Adapt that behavior:
+
+Ensure every Activity (task, note, email, call, etc.) can be:
+
+Linked to an Agreement
+
+Linked to a Party
+
+Add a simple Activity type field if not already present:
+
+Example values: Call, Email, LetterSent, InternalNote, Meeting, CourtFiling
+
+For file uploads (documents):
+
+Confirm or configure Supabase Storage (or whatever the repo uses) to store files.
+
+Ensure uploads can be attached to Agreements and Parties.
+
+On the Agreement detail page, show:
+
+A chronological Timeline of Activities.
+
+A Documents section listing attached files with type, date, and a download/view link.
+
+The goal is that for any Agreement, I can:
+
+See a clear, chronological list of all steps taken (letters sent, calls, notices).
+
+Download all relevant documents as evidence if we end up in litigation.
+
+7. Minimal UX tweaks for legal/collections context
+
+Please adjust labels and UI where appropriate so that:
+
+Navigation/menu refers to:
+
+Parties
+
+Persons
+
+Agreements
+
+Collections (or “Enforcement”)
+
+Agreement detail pages emphasize:
+
+Key financial/legal fields
+
+Status + enforcement stage
+
+Timeline and documents
+
+You do NOT need to implement:
+
+Public signup
+
+Fancy client login or external portal (yet)
+
+Payment processing or invoicing
+
+This is a private internal back office app for now.
+
+8. Deliverables inside this Repl
+
+When you’re done with the first pass:
+
+Make sure npm install and npm run dev (or equivalent) work in Replit.
+
+Give me:
+
+A short README section at the root of the Repl explaining:
+
+How to set environment variables for Supabase.
+
+How to run local dev.
+
+Where to run SQL/migrations for the new Agreement fields.
+
+A checklist of what’s implemented:
+
+ Imported Atomic CRM
+
+ Renamed Companies/Deals/Contacts to Parties/Agreements/Persons in the UI
+
+ Added Agreement fields (performanceStatus, enforcementStage, etc.)
+
+ Set up Active Agreements & Collections pipelines
+
+ Confirmed Activities + Documents attach correctly to Agreements / Parties
+
+Focus on getting a working, minimal but real system stood up first; we can iterate details later.
+
+If anything in the Atomic CRM repo structure requires clarification for these steps, explain what you found and propose the simplest possible adjustments so this works cleanly in Replit.
