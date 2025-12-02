@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 
@@ -30,6 +30,7 @@ export default function Agreements() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [search, setSearch] = useState("");
   
   // Form State
   const [title, setTitle] = useState("");
@@ -39,19 +40,30 @@ export default function Agreements() {
   const [date, setDate] = useState("");
   const [file, setFile] = useState<File | null>(null);
 
+  const getPartyName = (id: string) => parties.find(p => p.id === id)?.name || "Unknown Party";
+
+  const filteredAgreements = useMemo(() => {
+    if (!search.trim()) return agreements;
+    const searchLower = search.toLowerCase();
+    return agreements.filter(a => 
+      a.title.toLowerCase().includes(searchLower) ||
+      a.type.toLowerCase().includes(searchLower) ||
+      getPartyName(a.partyId).toLowerCase().includes(searchLower)
+    );
+  }, [agreements, search, parties]);
+
   const agreementsByStatus = useMemo(() => {
     const grouped: Record<string, Agreement[]> = {};
     STATUS_COLUMNS.forEach(s => grouped[s] = []);
     
-    agreements.forEach(a => {
+    filteredAgreements.forEach(a => {
       if (grouped[a.performanceStatus]) {
         grouped[a.performanceStatus].push(a);
       }
     });
     return grouped;
-  }, [agreements]);
+  }, [filteredAgreements]);
 
-  const getPartyName = (id: string) => parties.find(p => p.id === id)?.name || "Unknown Party";
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
 
   const handleAddAgreement = async (e: React.FormEvent) => {
@@ -117,8 +129,20 @@ export default function Agreements() {
           <h1 className="text-3xl font-bold text-foreground">Agreements</h1>
           <p className="text-muted-foreground">Active deal flow and portfolio management.</p>
         </div>
+
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Filter agreements..."
+              className="pl-8 w-64"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              data-testid="input-search-agreements"
+            />
+          </div>
         
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
@@ -191,6 +215,7 @@ export default function Agreements() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="flex-1 overflow-x-auto pb-4">
