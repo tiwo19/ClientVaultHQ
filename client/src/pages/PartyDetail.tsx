@@ -39,8 +39,18 @@ import {
 import { format } from "date-fns";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { getDocumentDownloadUrl } from "@/lib/api";
+import { 
+  getDocumentDownloadUrl,
+  fetchContactPointsByParty,
+  createContactPoint,
+  deleteContactPoint,
+  fetchAddressesByParty,
+  createAddress,
+  deleteAddress
+} from "@/lib/api";
 import { DocumentCategory } from "@/lib/mockData";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { ContactPoint, Address } from "@shared/schema";
 
 const IDENTITY_CATEGORIES: { value: DocumentCategory; label: string }[] = [
   { value: "Passport", label: "Passport" },
@@ -142,6 +152,30 @@ export default function PartyDetail() {
   const [relType, setRelType] = useState("Parent");
   const [relNotes, setRelNotes] = useState("");
 
+  const [contactPoints, setContactPoints] = useState<ContactPoint[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [isLoadingDueDiligence, setIsLoadingDueDiligence] = useState(false);
+
+  const [isAddContactPointOpen, setIsAddContactPointOpen] = useState(false);
+  const [cpType, setCpType] = useState<"email" | "phone">("email");
+  const [cpValue, setCpValue] = useState("");
+  const [cpLabel, setCpLabel] = useState("Work");
+  const [cpIsPrimary, setCpIsPrimary] = useState(false);
+  const [cpIsVerified, setCpIsVerified] = useState(false);
+  const [cpNotes, setCpNotes] = useState("");
+
+  const [isAddAddressOpen, setIsAddAddressOpen] = useState(false);
+  const [addrLabel, setAddrLabel] = useState("Primary");
+  const [addrStreet1, setAddrStreet1] = useState("");
+  const [addrStreet2, setAddrStreet2] = useState("");
+  const [addrCity, setAddrCity] = useState("");
+  const [addrState, setAddrState] = useState("");
+  const [addrPostalCode, setAddrPostalCode] = useState("");
+  const [addrCountry, setAddrCountry] = useState("USA");
+  const [addrIsPrimary, setAddrIsPrimary] = useState(false);
+  const [addrIsVerified, setAddrIsVerified] = useState(false);
+  const [addrNotes, setAddrNotes] = useState("");
+
   const party = parties.find(p => p.id === id);
   
   useEffect(() => {
@@ -156,6 +190,27 @@ export default function PartyDetail() {
       setEditNotes(party.notes || "");
     }
   }, [party]);
+
+  useEffect(() => {
+    if (id) {
+      const fetchDueDiligenceData = async () => {
+        setIsLoadingDueDiligence(true);
+        try {
+          const [contactPointsData, addressesData] = await Promise.all([
+            fetchContactPointsByParty(id),
+            fetchAddressesByParty(id)
+          ]);
+          setContactPoints(contactPointsData);
+          setAddresses(addressesData);
+        } catch (error) {
+          console.error("Failed to fetch due diligence data:", error);
+        } finally {
+          setIsLoadingDueDiligence(false);
+        }
+      };
+      fetchDueDiligenceData();
+    }
+  }, [id]);
   
   if (isLoading) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
@@ -396,6 +451,124 @@ export default function PartyDetail() {
         toast({ title: "Relationship Removed" });
       } catch (error) {
         toast({ title: "Error", description: "Failed to remove relationship.", variant: "destructive" });
+      }
+    }
+  };
+
+  const handleAddContactPoint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+
+    if (!cpValue.trim()) {
+      toast({ title: "Validation Error", description: "Please enter a value for the contact point.", variant: "destructive" });
+      return;
+    }
+
+    if (cpType === "email" && !cpValue.includes("@")) {
+      toast({ title: "Validation Error", description: "Please enter a valid email address.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const newContactPoint = await createContactPoint({
+        ownerType: "party",
+        partyId: id,
+        type: cpType,
+        value: cpValue.trim(),
+        label: cpLabel,
+        isPrimary: cpIsPrimary,
+        isVerified: cpIsVerified,
+        notes: cpNotes || undefined
+      });
+      setContactPoints([...contactPoints, newContactPoint]);
+      setIsAddContactPointOpen(false);
+      resetContactPointForm();
+      toast({ title: "Contact Point Added", description: `${cpType === "email" ? "Email" : "Phone"} has been added.` });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to add contact point.", variant: "destructive" });
+    }
+  };
+
+  const resetContactPointForm = () => {
+    setCpType("email");
+    setCpValue("");
+    setCpLabel("Work");
+    setCpIsPrimary(false);
+    setCpIsVerified(false);
+    setCpNotes("");
+  };
+
+  const handleDeleteContactPoint = async (contactPointId: string) => {
+    if (confirm("Are you sure you want to delete this contact point?")) {
+      try {
+        await deleteContactPoint(contactPointId);
+        setContactPoints(contactPoints.filter(cp => cp.id !== contactPointId));
+        toast({ title: "Contact Point Deleted" });
+      } catch (error) {
+        toast({ title: "Error", description: "Failed to delete contact point.", variant: "destructive" });
+      }
+    }
+  };
+
+  const handleAddAddress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+
+    if (!addrStreet1.trim()) {
+      toast({ title: "Validation Error", description: "Street address is required.", variant: "destructive" });
+      return;
+    }
+
+    if (!addrCity.trim()) {
+      toast({ title: "Validation Error", description: "City is required.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const newAddress = await createAddress({
+        ownerType: "party",
+        partyId: id,
+        label: addrLabel,
+        street1: addrStreet1.trim(),
+        street2: addrStreet2.trim() || undefined,
+        city: addrCity.trim(),
+        state: addrState.trim() || undefined,
+        postalCode: addrPostalCode.trim() || undefined,
+        country: addrCountry,
+        isPrimary: addrIsPrimary,
+        isVerified: addrIsVerified,
+        notes: addrNotes || undefined
+      });
+      setAddresses([...addresses, newAddress]);
+      setIsAddAddressOpen(false);
+      resetAddressForm();
+      toast({ title: "Address Added", description: "Address has been added." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to add address.", variant: "destructive" });
+    }
+  };
+
+  const resetAddressForm = () => {
+    setAddrLabel("Primary");
+    setAddrStreet1("");
+    setAddrStreet2("");
+    setAddrCity("");
+    setAddrState("");
+    setAddrPostalCode("");
+    setAddrCountry("USA");
+    setAddrIsPrimary(false);
+    setAddrIsVerified(false);
+    setAddrNotes("");
+  };
+
+  const handleDeleteAddress = async (addressId: string) => {
+    if (confirm("Are you sure you want to delete this address?")) {
+      try {
+        await deleteAddress(addressId);
+        setAddresses(addresses.filter(a => a.id !== addressId));
+        toast({ title: "Address Deleted" });
+      } catch (error) {
+        toast({ title: "Error", description: "Failed to delete address.", variant: "destructive" });
       }
     }
   };
@@ -695,6 +868,10 @@ export default function PartyDetail() {
               <TabsTrigger value="relationships" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3">
                 <Users className="h-4 w-4 mr-2" />
                 Relationships ({relatedRelationships.length})
+              </TabsTrigger>
+              <TabsTrigger value="duediligence" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3" data-testid="tab-due-diligence">
+                <Shield className="h-4 w-4 mr-2" />
+                Due Diligence ({contactPoints.length + addresses.length})
               </TabsTrigger>
             </TabsList>
             
@@ -1023,6 +1200,341 @@ export default function PartyDetail() {
                   <p className="text-xs mt-1">Link this party to parent companies, subsidiaries, or guarantors.</p>
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="duediligence" className="pt-6 space-y-8">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Mail className="h-5 w-5" />
+                    Contact Points
+                  </h3>
+                  <Dialog open={isAddContactPointOpen} onOpenChange={setIsAddContactPointOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" data-testid="button-add-contact-point">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Contact Point
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Add Contact Point</DialogTitle>
+                        <DialogDescription>
+                          Add an email address or phone number for this party.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <form onSubmit={handleAddContactPoint} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Type</Label>
+                            <Select value={cpType} onValueChange={(v) => setCpType(v as "email" | "phone")}>
+                              <SelectTrigger data-testid="select-cp-type">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="email">Email</SelectItem>
+                                <SelectItem value="phone">Phone</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Label</Label>
+                            <Select value={cpLabel} onValueChange={setCpLabel}>
+                              <SelectTrigger data-testid="select-cp-label">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Work">Work</SelectItem>
+                                <SelectItem value="Mobile">Mobile</SelectItem>
+                                <SelectItem value="Home">Home</SelectItem>
+                                <SelectItem value="Personal">Personal</SelectItem>
+                                <SelectItem value="Fax">Fax</SelectItem>
+                                <SelectItem value="Other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Value</Label>
+                          <Input 
+                            value={cpValue} 
+                            onChange={e => setCpValue(e.target.value)} 
+                            required 
+                            placeholder={cpType === "email" ? "email@example.com" : "+1 (555) 123-4567"}
+                            data-testid="input-cp-value"
+                          />
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="flex items-center gap-2">
+                            <Checkbox 
+                              id="cp-primary" 
+                              checked={cpIsPrimary} 
+                              onCheckedChange={(checked) => setCpIsPrimary(!!checked)}
+                              data-testid="checkbox-cp-primary"
+                            />
+                            <Label htmlFor="cp-primary" className="text-sm font-normal">Primary</Label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox 
+                              id="cp-verified" 
+                              checked={cpIsVerified} 
+                              onCheckedChange={(checked) => setCpIsVerified(!!checked)}
+                              data-testid="checkbox-cp-verified"
+                            />
+                            <Label htmlFor="cp-verified" className="text-sm font-normal">Verified</Label>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Notes (Optional)</Label>
+                          <Textarea 
+                            value={cpNotes} 
+                            onChange={e => setCpNotes(e.target.value)} 
+                            placeholder="Additional notes about this contact point..."
+                            rows={2}
+                            data-testid="input-cp-notes"
+                          />
+                        </div>
+                        <DialogFooter>
+                          <Button type="submit" disabled={!cpValue.trim()} data-testid="button-submit-contact-point">
+                            Add Contact Point
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+                
+                {isLoadingDueDiligence ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading contact points...</div>
+                ) : contactPoints.length > 0 ? (
+                  <div className="space-y-3">
+                    {contactPoints.map(cp => (
+                      <div key={cp.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors group" data-testid={`contact-point-${cp.id}`}>
+                        <div className="flex items-center gap-4">
+                          <div className="h-10 w-10 bg-muted flex items-center justify-center rounded-full">
+                            {cp.type === "email" ? <Mail className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">{cp.value}</span>
+                              <Badge variant="outline" className="text-[10px]">{cp.label}</Badge>
+                              {cp.isPrimary && <Badge variant="default" className="text-[10px]">Primary</Badge>}
+                              {cp.isVerified && <Badge variant="secondary" className="text-[10px] bg-green-100 text-green-700">Verified</Badge>}
+                            </div>
+                            <p className="text-xs text-muted-foreground capitalize">{cp.type}</p>
+                            {cp.notes && <p className="text-xs text-muted-foreground mt-1 italic">{cp.notes}</p>}
+                          </div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleDeleteContactPoint(cp.id)}
+                          data-testid={`button-delete-contact-point-${cp.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
+                    <Mail className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No contact points recorded yet.</p>
+                    <p className="text-xs mt-1">Add email addresses and phone numbers for due diligence.</p>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <MapPin className="h-5 w-5" />
+                    Known Addresses
+                  </h3>
+                  <Dialog open={isAddAddressOpen} onOpenChange={setIsAddAddressOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" data-testid="button-add-address">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Address
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-lg">
+                      <DialogHeader>
+                        <DialogTitle>Add Address</DialogTitle>
+                        <DialogDescription>
+                          Add a known address for this party.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <form onSubmit={handleAddAddress} className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>Label</Label>
+                          <Select value={addrLabel} onValueChange={setAddrLabel}>
+                            <SelectTrigger data-testid="select-addr-label">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Primary">Primary</SelectItem>
+                              <SelectItem value="Mailing">Mailing</SelectItem>
+                              <SelectItem value="Business">Business</SelectItem>
+                              <SelectItem value="Registered">Registered</SelectItem>
+                              <SelectItem value="Previous">Previous</SelectItem>
+                              <SelectItem value="Alternate">Alternate</SelectItem>
+                              <SelectItem value="Other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Street Address 1</Label>
+                          <Input 
+                            value={addrStreet1} 
+                            onChange={e => setAddrStreet1(e.target.value)} 
+                            required 
+                            placeholder="123 Main Street"
+                            data-testid="input-addr-street1"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Street Address 2 (Optional)</Label>
+                          <Input 
+                            value={addrStreet2} 
+                            onChange={e => setAddrStreet2(e.target.value)} 
+                            placeholder="Suite 100, Floor 2, etc."
+                            data-testid="input-addr-street2"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>City</Label>
+                            <Input 
+                              value={addrCity} 
+                              onChange={e => setAddrCity(e.target.value)} 
+                              required 
+                              placeholder="New York"
+                              data-testid="input-addr-city"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>State</Label>
+                            <Input 
+                              value={addrState} 
+                              onChange={e => setAddrState(e.target.value)} 
+                              placeholder="NY"
+                              data-testid="input-addr-state"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Postal Code</Label>
+                            <Input 
+                              value={addrPostalCode} 
+                              onChange={e => setAddrPostalCode(e.target.value)} 
+                              placeholder="10001"
+                              data-testid="input-addr-postal"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Country</Label>
+                            <Input 
+                              value={addrCountry} 
+                              onChange={e => setAddrCountry(e.target.value)} 
+                              placeholder="USA"
+                              data-testid="input-addr-country"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="flex items-center gap-2">
+                            <Checkbox 
+                              id="addr-primary" 
+                              checked={addrIsPrimary} 
+                              onCheckedChange={(checked) => setAddrIsPrimary(!!checked)}
+                              data-testid="checkbox-addr-primary"
+                            />
+                            <Label htmlFor="addr-primary" className="text-sm font-normal">Primary</Label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox 
+                              id="addr-verified" 
+                              checked={addrIsVerified} 
+                              onCheckedChange={(checked) => setAddrIsVerified(!!checked)}
+                              data-testid="checkbox-addr-verified"
+                            />
+                            <Label htmlFor="addr-verified" className="text-sm font-normal">Verified</Label>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Notes (Optional)</Label>
+                          <Textarea 
+                            value={addrNotes} 
+                            onChange={e => setAddrNotes(e.target.value)} 
+                            placeholder="Additional notes about this address..."
+                            rows={2}
+                            data-testid="input-addr-notes"
+                          />
+                        </div>
+                        <DialogFooter>
+                          <Button type="submit" disabled={!addrStreet1.trim() || !addrCity.trim()} data-testid="button-submit-address">
+                            Add Address
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+                
+                {isLoadingDueDiligence ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading addresses...</div>
+                ) : addresses.length > 0 ? (
+                  <div className="space-y-3">
+                    {addresses.map(addr => (
+                      <div key={addr.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors group" data-testid={`address-${addr.id}`}>
+                        <div className="flex items-center gap-4">
+                          <div className="h-10 w-10 bg-muted flex items-center justify-center rounded-full">
+                            <MapPin className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="outline" className="text-[10px]">{addr.label}</Badge>
+                              {addr.isPrimary && <Badge variant="default" className="text-[10px]">Primary</Badge>}
+                              {addr.isVerified && <Badge variant="secondary" className="text-[10px] bg-green-100 text-green-700">Verified</Badge>}
+                            </div>
+                            <p className="text-sm font-medium">
+                              {addr.street1}
+                              {addr.street2 && `, ${addr.street2}`}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {addr.city}
+                              {addr.state && `, ${addr.state}`}
+                              {addr.postalCode && ` ${addr.postalCode}`}
+                              {addr.country && `, ${addr.country}`}
+                            </p>
+                            {addr.notes && <p className="text-xs text-muted-foreground mt-1 italic">{addr.notes}</p>}
+                          </div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleDeleteAddress(addr.id)}
+                          data-testid={`button-delete-address-${addr.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
+                    <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No addresses recorded yet.</p>
+                    <p className="text-xs mt-1">Add known addresses for due diligence.</p>
+                  </div>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
         </div>

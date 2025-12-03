@@ -132,6 +132,110 @@ export async function deletePerson(id: string) {
   return handleResponse(response);
 }
 
+// ==================== CONTACT POINTS ====================
+
+export async function fetchContactPointsByParty(partyId: string) {
+  const response = await fetch(`${API_URL}/parties/${partyId}/contact-points`, { credentials: "include" });
+  return handleResponse(response);
+}
+
+export async function fetchContactPointsByPerson(personId: string) {
+  const response = await fetch(`${API_URL}/persons/${personId}/contact-points`, { credentials: "include" });
+  return handleResponse(response);
+}
+
+export async function createContactPoint(data: {
+  ownerType: string;
+  partyId?: string;
+  personId?: string;
+  type: string;
+  value: string;
+  label: string;
+  isPrimary?: boolean;
+  isVerified?: boolean;
+  notes?: string;
+}) {
+  const response = await fetch(`${API_URL}/contact-points`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+export async function updateContactPoint(id: string, data: any) {
+  const response = await fetch(`${API_URL}/contact-points/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+export async function deleteContactPoint(id: string) {
+  const response = await fetch(`${API_URL}/contact-points/${id}`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+// ==================== ADDRESSES ====================
+
+export async function fetchAddressesByParty(partyId: string) {
+  const response = await fetch(`${API_URL}/parties/${partyId}/addresses`, { credentials: "include" });
+  return handleResponse(response);
+}
+
+export async function fetchAddressesByPerson(personId: string) {
+  const response = await fetch(`${API_URL}/persons/${personId}/addresses`, { credentials: "include" });
+  return handleResponse(response);
+}
+
+export async function createAddress(data: {
+  ownerType: string;
+  partyId?: string;
+  personId?: string;
+  label: string;
+  street1: string;
+  street2?: string;
+  city: string;
+  state?: string;
+  postalCode?: string;
+  country: string;
+  isPrimary?: boolean;
+  isVerified?: boolean;
+  notes?: string;
+}) {
+  const response = await fetch(`${API_URL}/addresses`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+export async function updateAddress(id: string, data: any) {
+  const response = await fetch(`${API_URL}/addresses/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+export async function deleteAddress(id: string) {
+  const response = await fetch(`${API_URL}/addresses/${id}`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
 // ==================== AGREEMENTS ====================
 
 export async function fetchAgreements() {

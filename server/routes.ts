@@ -302,7 +302,24 @@ export async function registerRoutes(
   app.post("/api/contact-points", requireAuth, async (req, res) => {
     try {
       const cpData = insertContactPointSchema.parse(req.body);
-      const cp = await storage.createContactPoint(cpData);
+      
+      if (cpData.ownerType === "party" && !cpData.partyId) {
+        return res.status(400).json({ error: "partyId is required when ownerType is 'party'" });
+      }
+      if (cpData.ownerType === "person" && !cpData.personId) {
+        return res.status(400).json({ error: "personId is required when ownerType is 'person'" });
+      }
+      if (!cpData.value || !cpData.value.trim()) {
+        return res.status(400).json({ error: "Contact point value is required" });
+      }
+      if (cpData.type === "email" && !cpData.value.includes("@")) {
+        return res.status(400).json({ error: "Invalid email address format" });
+      }
+      
+      const cp = await storage.createContactPoint({
+        ...cpData,
+        value: cpData.value.trim()
+      });
       res.json(cp);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -356,7 +373,28 @@ export async function registerRoutes(
   app.post("/api/addresses", requireAuth, async (req, res) => {
     try {
       const addrData = insertAddressSchema.parse(req.body);
-      const addr = await storage.createAddress(addrData);
+      
+      if (addrData.ownerType === "party" && !addrData.partyId) {
+        return res.status(400).json({ error: "partyId is required when ownerType is 'party'" });
+      }
+      if (addrData.ownerType === "person" && !addrData.personId) {
+        return res.status(400).json({ error: "personId is required when ownerType is 'person'" });
+      }
+      if (!addrData.street1 || !addrData.street1.trim()) {
+        return res.status(400).json({ error: "Street address is required" });
+      }
+      if (!addrData.city || !addrData.city.trim()) {
+        return res.status(400).json({ error: "City is required" });
+      }
+      
+      const addr = await storage.createAddress({
+        ...addrData,
+        street1: addrData.street1.trim(),
+        street2: addrData.street2?.trim() || undefined,
+        city: addrData.city.trim(),
+        state: addrData.state?.trim() || undefined,
+        postalCode: addrData.postalCode?.trim() || undefined
+      });
       res.json(addr);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
