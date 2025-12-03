@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertActivitySchema, insertDocumentSchema } from "@shared/schema";
+import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertActivitySchema, insertDocumentSchema, insertContactPointSchema, insertAddressSchema } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import session from "express-session";
@@ -273,6 +273,114 @@ export async function registerRoutes(
   app.delete("/api/persons/:id", requireAuth, async (req, res) => {
     try {
       await storage.deletePerson(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== CONTACT POINTS ROUTES ====================
+
+  app.get("/api/parties/:partyId/contact-points", requireAuth, async (req, res) => {
+    try {
+      const contactPoints = await storage.getContactPointsByParty(req.params.partyId);
+      res.json(contactPoints);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/persons/:personId/contact-points", requireAuth, async (req, res) => {
+    try {
+      const contactPoints = await storage.getContactPointsByPerson(req.params.personId);
+      res.json(contactPoints);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/contact-points", requireAuth, async (req, res) => {
+    try {
+      const cpData = insertContactPointSchema.parse(req.body);
+      const cp = await storage.createContactPoint(cpData);
+      res.json(cp);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/contact-points/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateContactPoint(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Contact point not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/contact-points/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteContactPoint(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== ADDRESSES ROUTES ====================
+
+  app.get("/api/parties/:partyId/addresses", requireAuth, async (req, res) => {
+    try {
+      const addresses = await storage.getAddressesByParty(req.params.partyId);
+      res.json(addresses);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/persons/:personId/addresses", requireAuth, async (req, res) => {
+    try {
+      const addresses = await storage.getAddressesByPerson(req.params.personId);
+      res.json(addresses);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/addresses", requireAuth, async (req, res) => {
+    try {
+      const addrData = insertAddressSchema.parse(req.body);
+      const addr = await storage.createAddress(addrData);
+      res.json(addr);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/addresses/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateAddress(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Address not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/addresses/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteAddress(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
