@@ -172,6 +172,34 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/users/:id/credits", requireAdmin, async (req, res) => {
+    try {
+      const { amount, description } = req.body;
+      const numAmount = Number(amount);
+      
+      if (!Number.isInteger(numAmount) || numAmount < 1 || numAmount > 1000000) {
+        return res.status(400).json({ error: "Amount must be a whole number between 1 and 1,000,000" });
+      }
+      
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      await storage.addCredits(
+        req.params.id,
+        numAmount,
+        description || `Admin credit adjustment by ${req.session.userId}`,
+        null
+      );
+      
+      const newBalance = await storage.getUserCredits(req.params.id);
+      res.json({ success: true, credits: newBalance });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== PARTY ROUTES ====================
   
   app.get("/api/parties", requireAuth, async (req, res) => {
