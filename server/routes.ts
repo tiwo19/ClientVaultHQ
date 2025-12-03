@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertActivitySchema, insertDocumentSchema } from "@shared/schema";
@@ -10,7 +10,14 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import OpenAI from "openai";
+import Stripe from "stripe";
 import { prepareForAnalysis, isPreprocessingError } from "./services/documentPreprocessor";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
+  apiVersion: "2025-04-30.basil",
+});
+
+const CREDITS_PER_DOLLAR = 100;
 
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -616,6 +623,145 @@ Respond with JSON in this exact format:
       res.json({ success: true, activity });
     } catch (error: any) {
       console.error("AI Bucket confirm error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== CREDITS & STRIPE ROUTES ====================
+
+  app.get("/api/credits", requireAuth, async (req, res) => {
+    try {
+      const credits = await storage.getUserCredits(req.session.userId!);
+      res.json({ credits });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/credits/transactions", requireAuth, async (req, res) => {
+    try {
+      const transactions = await storage.getCreditTransactions(req.session.userId!);
+      res.json(transactions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/stripe/create-checkout-session", requireAuth, async (req, res) => {
+    try {
+      const { amount } = req.body;
+      
+      if (!amount || amount < 5 || amount > 1000) {
+        return res.status(400).json({ error: "Amount must be between $5 and $1000" });
+      }
+
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      const creditsToAdd = amount * CREDITS_PER_DOLLAR;
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: `${creditsToAdd} Credits`,
+                description: `Purchase ${creditsToAdd} credits for LegalFlow ($1 = ${CREDITS_PER_DOLLAR} credits)`,
+              },
+              unit_amount: amount * 100,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: "payment",
+        success_url: `${baseUrl}/credits?success=true&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/credits?canceled=true`,
+        customer_email: user.email,
+        metadata: {
+          userId: user.id,
+          creditsToAdd: creditsToAdd.toString(),
+        },
+      });
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error("Stripe checkout error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/stripe/webhook", async (req: Request, res: Response) => {
+    const sig = req.headers["stripe-signature"] as string;
+    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    let event: Stripe.Event;
+
+    try {
+      if (endpointSecret) {
+        event = stripe.webhooks.constructEvent(
+          (req as any).rawBody,
+          sig,
+          endpointSecret
+        );
+      } else {
+        event = req.body as Stripe.Event;
+      }
+    } catch (err: any) {
+      console.error("Webhook signature verification failed:", err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      
+      const userId = session.metadata?.userId;
+      const creditsToAdd = parseInt(session.metadata?.creditsToAdd || "0", 10);
+
+      if (userId && creditsToAdd > 0) {
+        try {
+          await storage.addCredits(
+            userId,
+            creditsToAdd,
+            `Purchased ${creditsToAdd} credits`,
+            session.payment_intent as string
+          );
+          console.log(`Added ${creditsToAdd} credits to user ${userId}`);
+        } catch (error) {
+          console.error("Error adding credits:", error);
+        }
+      }
+    }
+
+    res.json({ received: true });
+  });
+
+  app.get("/api/stripe/verify-session/:sessionId", requireAuth, async (req, res) => {
+    try {
+      const session = await stripe.checkout.sessions.retrieve(req.params.sessionId);
+      
+      if (session.payment_status === "paid") {
+        const userId = session.metadata?.userId;
+        const creditsToAdd = parseInt(session.metadata?.creditsToAdd || "0", 10);
+        
+        if (userId === req.session.userId && creditsToAdd > 0) {
+          const currentCredits = await storage.getUserCredits(userId);
+          res.json({ 
+            success: true, 
+            credits: currentCredits,
+            added: creditsToAdd 
+          });
+        } else {
+          res.json({ success: false, error: "Session mismatch" });
+        }
+      } else {
+        res.json({ success: false, error: "Payment not completed" });
+      }
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
