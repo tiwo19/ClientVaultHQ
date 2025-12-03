@@ -1,10 +1,7 @@
 import fs from "fs";
 import path from "path";
-import { createRequire } from "module";
-
-const require = createRequire(import.meta.url);
-const pdfParse = require("pdf-parse");
-const mammoth = require("mammoth");
+import pdfParse from "pdf-parse";
+import mammoth from "mammoth";
 
 export interface PreparedArtifact {
   fileType: "image" | "pdf" | "docx";
