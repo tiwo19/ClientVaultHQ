@@ -848,32 +848,34 @@ export default function PartyDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Tabs defaultValue="timeline" className="w-full">
-            <TabsList className="w-full justify-start border-b rounded-none h-auto p-0 bg-transparent gap-6">
-              <TabsTrigger value="timeline" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3">
-                <Clock className="h-4 w-4 mr-2" />
-                Timeline ({partyActivities.length})
-              </TabsTrigger>
-              <TabsTrigger value="identity" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3">
-                <User className="h-4 w-4 mr-2" />
-                Identity ({identityDocs.length})
-              </TabsTrigger>
-              <TabsTrigger value="corporate" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3">
-                <Building2 className="h-4 w-4 mr-2" />
-                Corporate ({corporateDocs.length})
-              </TabsTrigger>
-              <TabsTrigger value="other" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3">
-                <FileText className="h-4 w-4 mr-2" />
-                Other ({otherDocs.length})
-              </TabsTrigger>
-              <TabsTrigger value="relationships" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3">
-                <Users className="h-4 w-4 mr-2" />
-                Relationships ({relatedRelationships.length})
-              </TabsTrigger>
-              <TabsTrigger value="duediligence" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3" data-testid="tab-due-diligence">
-                <Shield className="h-4 w-4 mr-2" />
-                Contact Info ({contactPoints.length + addresses.length})
-              </TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto">
+              <TabsList className="w-max min-w-full justify-start border-b rounded-none h-auto p-0 bg-transparent gap-2">
+                <TabsTrigger value="timeline" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-3 py-3 text-sm whitespace-nowrap">
+                  <Clock className="h-4 w-4 mr-1.5" />
+                  Timeline ({partyActivities.length})
+                </TabsTrigger>
+                <TabsTrigger value="contact" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-3 py-3 text-sm whitespace-nowrap" data-testid="tab-contact-info">
+                  <Shield className="h-4 w-4 mr-1.5" />
+                  Contact Info ({contactPoints.length + addresses.length})
+                </TabsTrigger>
+                <TabsTrigger value="identity" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-3 py-3 text-sm whitespace-nowrap">
+                  <User className="h-4 w-4 mr-1.5" />
+                  Identity ({identityDocs.length})
+                </TabsTrigger>
+                <TabsTrigger value="corporate" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-3 py-3 text-sm whitespace-nowrap">
+                  <Building2 className="h-4 w-4 mr-1.5" />
+                  Corporate ({corporateDocs.length})
+                </TabsTrigger>
+                <TabsTrigger value="other" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-3 py-3 text-sm whitespace-nowrap">
+                  <FileText className="h-4 w-4 mr-1.5" />
+                  Other ({otherDocs.length})
+                </TabsTrigger>
+                <TabsTrigger value="relationships" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-3 py-3 text-sm whitespace-nowrap">
+                  <Users className="h-4 w-4 mr-1.5" />
+                  Relationships ({relatedRelationships.length})
+                </TabsTrigger>
+              </TabsList>
+            </div>
             
             <TabsContent value="timeline" className="pt-6">
               <div className="flex justify-end mb-4">
@@ -1202,7 +1204,7 @@ export default function PartyDetail() {
               )}
             </TabsContent>
 
-            <TabsContent value="duediligence" className="pt-6 space-y-8">
+            <TabsContent value="contact" className="pt-6 space-y-8">
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold flex items-center gap-2">
