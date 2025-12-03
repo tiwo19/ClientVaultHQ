@@ -62,6 +62,16 @@ export async function deleteUser(id: string) {
   return handleResponse(response);
 }
 
+export async function addUserCredits(userId: string, amount: number, description?: string) {
+  const response = await fetch(`${API_URL}/users/${userId}/credits`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ amount, description }),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
 // ==================== PARTIES ====================
 
 export async function fetchParties() {

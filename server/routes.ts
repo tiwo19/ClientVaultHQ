@@ -190,7 +190,7 @@ export async function registerRoutes(
         req.params.id,
         numAmount,
         description || `Admin credit adjustment by ${req.session.userId}`,
-        null
+        undefined
       );
       
       const newBalance = await storage.getUserCredits(req.params.id);

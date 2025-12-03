@@ -9,14 +9,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Trash2, UserPlus, Shield, Loader2 } from "lucide-react";
+import { Trash2, UserPlus, Shield, Loader2, Coins, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { addUserCredits } from "@/lib/api";
 
 export default function AdminUsers() {
   const { users, addUser, removeUser, user: currentUser, fetchUsers, loading } = useAuth();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isCreditsOpen, setIsCreditsOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [creditAmount, setCreditAmount] = useState("");
+  const [creditDescription, setCreditDescription] = useState("");
+  const [isAddingCredits, setIsAddingCredits] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -76,6 +82,48 @@ export default function AdminUsers() {
     setNewPassword("");
     setNewRole("Admin");
   };
+
+  const handleOpenCreditsDialog = (userId: string) => {
+    setSelectedUserId(userId);
+    setCreditAmount("");
+    setCreditDescription("");
+    setIsCreditsOpen(true);
+  };
+
+  const handleAddCredits = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUserId) return;
+    
+    const amount = parseInt(creditAmount, 10);
+    if (isNaN(amount) || amount < 1 || amount > 1000000) {
+      toast({ title: "Invalid Amount", description: "Please enter a whole number between 1 and 1,000,000.", variant: "destructive" });
+      return;
+    }
+    
+    setIsAddingCredits(true);
+    try {
+      const result = await addUserCredits(
+        selectedUserId,
+        amount,
+        creditDescription || "Admin credit adjustment"
+      );
+      
+      setIsCreditsOpen(false);
+      await fetchUsers();
+      toast({ 
+        title: "Credits Added", 
+        description: `Successfully added ${amount.toLocaleString()} credits. New balance: ${result.credits?.toLocaleString() || 'updated'}` 
+      });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to add credits.", variant: "destructive" });
+    } finally {
+      setIsAddingCredits(false);
+    }
+  };
+
+  const selectedUser = users.find(u => u.id === selectedUserId);
+  const parsedAmount = parseInt(creditAmount, 10);
+  const isValidAmount = !isNaN(parsedAmount) && parsedAmount >= 1 && parsedAmount <= 1000000;
 
   return (
     <div className="space-y-8">
@@ -137,6 +185,7 @@ export default function AdminUsers() {
                 <TableHead>User</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead className="text-right">Credits</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -164,6 +213,22 @@ export default function AdminUsers() {
                   </TableCell>
                   <TableCell className="text-muted-foreground" data-testid={`text-email-${user.id}`}>{user.email}</TableCell>
                   <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="font-medium" data-testid={`text-credits-${user.id}`}>
+                        {(user as any).credits?.toLocaleString() || 0}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleOpenCreditsDialog(user.id)}
+                        title="Add Credits"
+                        data-testid={`button-add-credits-${user.id}`}
+                      >
+                        <Plus className="h-4 w-4 text-muted-foreground hover:text-primary" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
                     <Button 
                       variant="ghost" 
                       size="icon"
@@ -178,7 +243,7 @@ export default function AdminUsers() {
               ))}
               {isLoadingUsers && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8">
+                  <TableCell colSpan={5} className="text-center py-8">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Loading users...
@@ -188,7 +253,7 @@ export default function AdminUsers() {
               )}
               {fetchError && !isLoadingUsers && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-destructive">
+                  <TableCell colSpan={5} className="text-center py-8 text-destructive">
                     {fetchError}
                     <Button variant="link" onClick={() => {
                       setIsLoadingUsers(true);
@@ -204,7 +269,7 @@ export default function AdminUsers() {
               )}
               {!isLoadingUsers && !fetchError && users.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                     No users found. Add the first user to get started.
                   </TableCell>
                 </TableRow>
@@ -213,6 +278,71 @@ export default function AdminUsers() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={isCreditsOpen} onOpenChange={setIsCreditsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Coins className="h-5 w-5" />
+              Add Credits
+            </DialogTitle>
+          </DialogHeader>
+          {selectedUser && (
+            <form onSubmit={handleAddCredits} className="space-y-4">
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">Adding credits to:</p>
+                <p className="font-medium">{selectedUser.name}</p>
+                <p className="text-sm text-muted-foreground">{selectedUser.email}</p>
+                <p className="text-sm mt-1">Current balance: <span className="font-medium">{(selectedUser as any).credits?.toLocaleString() || 0}</span></p>
+              </div>
+              <div className="space-y-2">
+                <Label>Amount to Add</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="1000000"
+                  step="1"
+                  value={creditAmount}
+                  onChange={e => setCreditAmount(e.target.value)}
+                  required
+                  placeholder="e.g. 1000"
+                  className={creditAmount && !isValidAmount ? "border-destructive" : ""}
+                  data-testid="input-credit-amount"
+                />
+                {creditAmount && !isValidAmount && (
+                  <p className="text-xs text-destructive">Please enter a whole number between 1 and 1,000,000</p>
+                )}
+                {isValidAmount && (
+                  <p className="text-xs text-muted-foreground">
+                    New balance will be: <span className="font-medium">{((selectedUser as any).credits || 0) + parsedAmount}</span> credits
+                  </p>
+                )}
+                {!creditAmount && (
+                  <p className="text-xs text-muted-foreground">Enter the number of credits to add (1 - 1,000,000)</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Description (optional)</Label>
+                <Input
+                  value={creditDescription}
+                  onChange={e => setCreditDescription(e.target.value)}
+                  placeholder="e.g. Promotional credit, adjustment, etc."
+                  data-testid="input-credit-description"
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsCreditsOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isAddingCredits || !isValidAmount} data-testid="button-submit-credits">
+                  {isAddingCredits && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Add Credits
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
