@@ -11,8 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Upload, Sparkles, FileImage, Check, X, Loader2, AlertCircle, ArrowRight, Calendar, User, FileText } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Upload, Sparkles, FileImage, Check, X, Loader2, AlertCircle, ArrowRight, Calendar, User, FileText, Plus, Building2 } from "lucide-react";
 import { Link } from "wouter";
+
+interface ExtractedPartyInfo {
+  name: string | null;
+  type: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+}
 
 interface AIAnalysis {
   matchedPartyId: string | null;
@@ -22,6 +31,7 @@ interface AIAnalysis {
   activityType: string;
   summary: string;
   reasoning: string;
+  extractedPartyInfo?: ExtractedPartyInfo;
 }
 
 interface FileInfo {
@@ -37,7 +47,7 @@ interface AnalysisResult {
 }
 
 export default function AIBucket() {
-  const { parties } = useData();
+  const { parties, addParty } = useData();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
@@ -51,6 +61,14 @@ export default function AIBucket() {
   const [editedDate, setEditedDate] = useState<string>("");
   const [editedActivityType, setEditedActivityType] = useState<string>("");
   const [editedSummary, setEditedSummary] = useState<string>("");
+  
+  const [isCreatePartyOpen, setIsCreatePartyOpen] = useState(false);
+  const [newPartyName, setNewPartyName] = useState("");
+  const [newPartyType, setNewPartyType] = useState("Company");
+  const [newPartyEmail, setNewPartyEmail] = useState("");
+  const [newPartyPhone, setNewPartyPhone] = useState("");
+  const [newPartyAddress, setNewPartyAddress] = useState("");
+  const [isCreatingParty, setIsCreatingParty] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -207,7 +225,55 @@ export default function AIBucket() {
     setEditedSummary("");
   };
 
+  const openCreatePartyDialog = () => {
+    const extracted = analysisResult?.analysis.extractedPartyInfo;
+    setNewPartyName(extracted?.name || "");
+    setNewPartyType(extracted?.type || "Company");
+    setNewPartyEmail(extracted?.email || "");
+    setNewPartyPhone(extracted?.phone || "");
+    setNewPartyAddress(extracted?.address || "");
+    setIsCreatePartyOpen(true);
+  };
+
+  const handleCreateParty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPartyName.trim()) {
+      toast({ title: "Missing Information", description: "Please enter a party name.", variant: "destructive" });
+      return;
+    }
+
+    setIsCreatingParty(true);
+    try {
+      const newParty = await addParty({
+        name: newPartyName.trim(),
+        type: newPartyType,
+        email: newPartyEmail || null,
+        phone: newPartyPhone || null,
+        address: newPartyAddress || null,
+        notes: null,
+        taxId: null,
+        jurisdictionOfFormation: null
+      });
+      
+      setEditedPartyId(newParty.id);
+      setIsCreatePartyOpen(false);
+      toast({
+        title: "Party Created",
+        description: `${newPartyName} has been created. You can now add the activity.`
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create party.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsCreatingParty(false);
+    }
+  };
+
   const selectedParty = parties.find(p => p.id === editedPartyId);
+  const noMatchFound = analysisResult && (!analysisResult.analysis.matchedPartyId || analysisResult.analysis.confidence < 0.5);
 
   return (
     <div className="space-y-6" onPaste={handlePaste}>
@@ -327,28 +393,57 @@ export default function AIBucket() {
               <Separator />
 
               <div className="space-y-4">
+                {noMatchFound && (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                    <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
+                      <AlertCircle className="h-4 w-4" />
+                      <span className="font-medium">No matching party found</span>
+                    </div>
+                    <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                      The AI couldn't confidently match this document to an existing party. Please select one manually or create a new party.
+                    </p>
+                    {analysisResult.analysis.extractedPartyInfo?.name && (
+                      <div className="mt-2 text-sm">
+                        <span className="text-amber-700 dark:text-amber-300">Extracted name: </span>
+                        <span className="font-medium">{analysisResult.analysis.extractedPartyInfo.name}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="party-select" className="flex items-center gap-2">
                     <User className="h-4 w-4" />
                     Party / Client
-                    {analysisResult.analysis.confidence > 0 && (
+                    {analysisResult.analysis.confidence > 0 && analysisResult.analysis.matchedPartyId && (
                       <Badge variant={analysisResult.analysis.confidence > 0.7 ? "default" : "secondary"}>
                         {Math.round(analysisResult.analysis.confidence * 100)}% match
                       </Badge>
                     )}
                   </Label>
-                  <Select value={editedPartyId} onValueChange={setEditedPartyId}>
-                    <SelectTrigger data-testid="select-party-ai-bucket">
-                      <SelectValue placeholder="Select a party" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {parties.map(party => (
-                        <SelectItem key={party.id} value={party.id}>
-                          {party.name} ({party.type})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-2">
+                    <Select value={editedPartyId} onValueChange={setEditedPartyId}>
+                      <SelectTrigger className="flex-1" data-testid="select-party-ai-bucket">
+                        <SelectValue placeholder="Select a party" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {parties.map(party => (
+                          <SelectItem key={party.id} value={party.id}>
+                            {party.name} ({party.type})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={openCreatePartyDialog}
+                      data-testid="button-create-party-ai-bucket"
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      New
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -452,6 +547,86 @@ export default function AIBucket() {
           </Card>
         )}
       </div>
+
+      <Dialog open={isCreatePartyOpen} onOpenChange={setIsCreatePartyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Create New Party
+            </DialogTitle>
+            <DialogDescription>
+              Create a new party with the information extracted from the document.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateParty} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Name *</Label>
+              <Input 
+                value={newPartyName} 
+                onChange={e => setNewPartyName(e.target.value)} 
+                required 
+                placeholder="Legal Entity Name"
+                data-testid="input-new-party-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Type</Label>
+              <Select value={newPartyType} onValueChange={setNewPartyType}>
+                <SelectTrigger data-testid="select-new-party-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Company">Company</SelectItem>
+                  <SelectItem value="Individual">Individual</SelectItem>
+                  <SelectItem value="Trust">Trust</SelectItem>
+                  <SelectItem value="Bank">Bank</SelectItem>
+                  <SelectItem value="JVPartner">JV Partner</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input 
+                  value={newPartyEmail} 
+                  onChange={e => setNewPartyEmail(e.target.value)} 
+                  type="email" 
+                  placeholder="contact@domain.com"
+                  data-testid="input-new-party-email"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Phone</Label>
+                <Input 
+                  value={newPartyPhone} 
+                  onChange={e => setNewPartyPhone(e.target.value)} 
+                  placeholder="+1..."
+                  data-testid="input-new-party-phone"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Address</Label>
+              <Input 
+                value={newPartyAddress} 
+                onChange={e => setNewPartyAddress(e.target.value)} 
+                placeholder="Full Address"
+                data-testid="input-new-party-address"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsCreatePartyOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isCreatingParty} data-testid="button-submit-new-party">
+                {isCreatingParty && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Create Party
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

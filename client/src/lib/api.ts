@@ -62,16 +62,6 @@ export async function deleteUser(id: string) {
   return handleResponse(response);
 }
 
-export async function addUserCredits(userId: string, amount: number, description?: string) {
-  const response = await fetch(`${API_URL}/users/${userId}/credits`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ amount, description }),
-    credentials: "include"
-  });
-  return handleResponse(response);
-}
-
 // ==================== PARTIES ====================
 
 export async function fetchParties() {
@@ -405,31 +395,3 @@ export async function bulkUpdateAgreementStatus(ids: string[], status: string) {
   return results;
 }
 
-// ==================== CREDITS & STRIPE ====================
-
-export async function fetchCredits() {
-  const response = await fetch(`${API_URL}/credits`, { credentials: "include" });
-  return handleResponse(response);
-}
-
-export async function fetchCreditTransactions() {
-  const response = await fetch(`${API_URL}/credits/transactions`, { credentials: "include" });
-  return handleResponse(response);
-}
-
-export async function createCheckoutSession(amount: number) {
-  const response = await fetch(`${API_URL}/stripe/create-checkout-session`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ amount }),
-    credentials: "include"
-  });
-  return handleResponse(response);
-}
-
-export async function verifyCheckoutSession(sessionId: string) {
-  const response = await fetch(`${API_URL}/stripe/verify-session/${sessionId}`, {
-    credentials: "include"
-  });
-  return handleResponse(response);
-}

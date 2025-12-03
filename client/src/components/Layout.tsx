@@ -10,8 +10,7 @@ import {
   Menu,
   LogOut,
   Shield,
-  Sparkles,
-  Coins
+  Sparkles
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -45,7 +44,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { label: "Agreements", icon: FileText, href: "/agreements" },
     { label: "Enforcement", icon: Gavel, href: "/enforcement" },
     { label: "AI Bucket", icon: Sparkles, href: "/ai-bucket" },
-    { label: "Credits", icon: Coins, href: "/credits" },
     // Admin only route shown for demo purposes (in real app, filter by role)
     ...(user?.role === "Admin" ? [{ label: "Admin Users", icon: Shield, href: "/admin/users" }] : []),
   ];

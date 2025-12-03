@@ -657,6 +657,7 @@ Your task is to:
 2. Extract the date of the communication or document (if visible)
 3. Determine the type of activity (Email, Call, Meeting, LetterSent, InternalNote, CourtFiling)
 4. Write a brief summary of the content
+5. If no confident match is found, extract any party/company information you can find in the document
 
 Here are the existing parties in the system:
 ${partyNames}
@@ -669,8 +670,17 @@ Respond with JSON in this exact format:
   "date": "YYYY-MM-DD format if found, or null",
   "activityType": "Email|Call|Meeting|LetterSent|InternalNote|CourtFiling",
   "summary": "brief summary of the document content",
-  "reasoning": "brief explanation of how you matched the party"
-}`;
+  "reasoning": "brief explanation of how you matched the party or why no match was found",
+  "extractedPartyInfo": {
+    "name": "company or person name if found in document, or null",
+    "type": "Company|Individual|Trust|Bank|JVPartner - best guess based on context, or null",
+    "email": "email address if found, or null",
+    "phone": "phone number if found, or null",
+    "address": "address if found, or null"
+  }
+}
+
+IMPORTANT: The extractedPartyInfo field should contain any party/company information you can extract from the document itself, regardless of whether a match was found. This helps users create new parties if needed.`;
 
       let messages: any[];
       

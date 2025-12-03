@@ -39,9 +39,12 @@ export default function Parties() {
     addParty({
       name: newName,
       type: newType,
-      email: newEmail,
-      phone: newPhone,
-      address: newAddress
+      email: newEmail || null,
+      phone: newPhone || null,
+      address: newAddress || null,
+      notes: null,
+      taxId: null,
+      jurisdictionOfFormation: null
     });
     setIsAddOpen(false);
     resetForm();

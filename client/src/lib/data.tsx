@@ -15,7 +15,7 @@ interface DataContextType {
   isLoading: boolean;
 
   // Mutations
-  addParty: (party: Omit<Party, "id">) => Promise<void>;
+  addParty: (party: Omit<Party, "id">) => Promise<Party>;
   updateParty: (id: string, data: Partial<Party>) => Promise<Party>;
   removeParty: (id: string) => Promise<void>;
   
@@ -143,8 +143,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   });
 
   // Helper functions
-  const addParty = async (party: Omit<Party, "id">) => {
-    await addPartyMutation.mutateAsync(party);
+  const addParty = async (party: Omit<Party, "id">): Promise<Party> => {
+    return await addPartyMutation.mutateAsync(party);
   };
 
   const removeParty = async (id: string) => {

@@ -871,7 +871,7 @@ export default function PartyDetail() {
               </TabsTrigger>
               <TabsTrigger value="duediligence" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-4 py-3" data-testid="tab-due-diligence">
                 <Shield className="h-4 w-4 mr-2" />
-                Due Diligence ({contactPoints.length + addresses.length})
+                Contact Info ({contactPoints.length + addresses.length})
               </TabsTrigger>
             </TabsList>
             
