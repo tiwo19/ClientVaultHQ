@@ -7,9 +7,10 @@ import {
   type Activity, type InsertActivity,
   type Document, type InsertDocument,
   type PartyRelationship, type InsertPartyRelationship,
-  users, parties, persons, agreements, activities, documents, partyRelationships
+  type CreditTransaction, type InsertCreditTransaction,
+  users, parties, persons, agreements, activities, documents, partyRelationships, creditTransactions
 } from "@shared/schema";
-import { eq, or } from "drizzle-orm";
+import { eq, or, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -55,6 +56,13 @@ export interface IStorage {
   getPartyRelationshipsByParty(partyId: string): Promise<PartyRelationship[]>;
   createPartyRelationship(rel: InsertPartyRelationship): Promise<PartyRelationship>;
   deletePartyRelationship(id: string): Promise<void>;
+
+  // Credits
+  getUserCredits(userId: string): Promise<number>;
+  addCredits(userId: string, amount: number, description: string, stripePaymentIntentId?: string): Promise<CreditTransaction>;
+  deductCredits(userId: string, amount: number, description: string): Promise<CreditTransaction>;
+  getCreditTransactions(userId: string): Promise<CreditTransaction[]>;
+  updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -209,6 +217,56 @@ export class DbStorage implements IStorage {
 
   async deletePartyRelationship(id: string): Promise<void> {
     await db.delete(partyRelationships).where(eq(partyRelationships.id, id));
+  }
+
+  // Credits
+  async getUserCredits(userId: string): Promise<number> {
+    const result = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
+    return result[0]?.credits ?? 0;
+  }
+
+  async addCredits(userId: string, amount: number, description: string, stripePaymentIntentId?: string): Promise<CreditTransaction> {
+    await db.update(users)
+      .set({ credits: sql`${users.credits} + ${amount}` })
+      .where(eq(users.id, userId));
+
+    const transaction: InsertCreditTransaction = {
+      userId,
+      type: "purchase",
+      amount,
+      description,
+      stripePaymentIntentId,
+    };
+    const result = await db.insert(creditTransactions).values(transaction).returning();
+    return result[0];
+  }
+
+  async deductCredits(userId: string, amount: number, description: string): Promise<CreditTransaction> {
+    await db.update(users)
+      .set({ credits: sql`${users.credits} - ${amount}` })
+      .where(eq(users.id, userId));
+
+    const transaction: InsertCreditTransaction = {
+      userId,
+      type: "usage",
+      amount: -amount,
+      description,
+    };
+    const result = await db.insert(creditTransactions).values(transaction).returning();
+    return result[0];
+  }
+
+  async getCreditTransactions(userId: string): Promise<CreditTransaction[]> {
+    return await db.select()
+      .from(creditTransactions)
+      .where(eq(creditTransactions.userId, userId))
+      .orderBy(desc(creditTransactions.createdAt));
+  }
+
+  async updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {
+    await db.update(users)
+      .set({ stripeCustomerId })
+      .where(eq(users.id, userId));
   }
 }
 
