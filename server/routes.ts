@@ -10,6 +10,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import OpenAI from "openai";
+import { prepareForAnalysis, isPreprocessingError } from "./services/documentPreprocessor";
 
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -455,29 +456,22 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No file uploaded" });
       }
 
+      // Preprocess the file based on its type
+      let artifact;
+      try {
+        artifact = await prepareForAnalysis(req.file.path, req.file.originalname);
+      } catch (error) {
+        if (isPreprocessingError(error)) {
+          return res.status(400).json({ error: error.message, code: error.code });
+        }
+        throw error;
+      }
+
       // Get all parties for matching
       const allParties = await storage.getAllParties();
       const partyNames = allParties.map(p => `${p.name} (ID: ${p.id}, Type: ${p.type})`).join("\n");
 
-      // Read file and convert to base64
-      const fileBuffer = fs.readFileSync(req.file.path);
-      const base64Image = fileBuffer.toString("base64");
-      
-      // Determine MIME type
-      const ext = path.extname(req.file.originalname).toLowerCase();
-      let mimeType = "image/png";
-      if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
-      else if (ext === ".gif") mimeType = "image/gif";
-      else if (ext === ".webp") mimeType = "image/webp";
-      else if (ext === ".pdf") mimeType = "application/pdf";
-
-      // Use GPT-5 vision to analyze the image
-      const analysisResponse = await openai.chat.completions.create({
-        model: "gpt-5",
-        messages: [
-          {
-            role: "system",
-            content: `You are an assistant analyzing business documents and communications (emails, screenshots, letters, contracts) for a legal/financial management system.
+      const systemPrompt = `You are an assistant analyzing business documents and communications (emails, screenshots, letters, contracts) for a legal/financial management system.
 
 Your task is to:
 1. Identify which client/party this document relates to from the list provided
@@ -497,24 +491,44 @@ Respond with JSON in this exact format:
   "activityType": "Email|Call|Meeting|LetterSent|InternalNote|CourtFiling",
   "summary": "brief summary of the document content",
   "reasoning": "brief explanation of how you matched the party"
-}`
-          },
+}`;
+
+      let messages: any[];
+      
+      if (artifact.extractedText && !artifact.imageDataUrl) {
+        messages = [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: `Analyze this ${artifact.fileType.toUpperCase()} document and extract the relevant information for our client management system.\n\n--- DOCUMENT TEXT ---\n${artifact.extractedText}`
+          }
+        ];
+      } else if (artifact.imageDataUrl) {
+        messages = [
+          { role: "system", content: systemPrompt },
           {
             role: "user",
             content: [
               {
                 type: "text",
-                text: "Analyze this document/image and extract the relevant information for our client management system."
+                text: artifact.extractedText 
+                  ? `Analyze this document and extract the relevant information for our client management system.\n\nExtracted text (may be incomplete):\n${artifact.extractedText}`
+                  : "Analyze this document/image and extract the relevant information for our client management system."
               },
               {
                 type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64Image}`
-                }
+                image_url: { url: artifact.imageDataUrl }
               }
             ]
           }
-        ],
+        ];
+      } else {
+        return res.status(400).json({ error: "Could not extract content from file" });
+      }
+
+      const analysisResponse = await openai.chat.completions.create({
+        model: "gpt-5",
+        messages,
         response_format: { type: "json_object" },
         max_completion_tokens: 2048
       });
@@ -522,14 +536,14 @@ Respond with JSON in this exact format:
       const analysisText = analysisResponse.choices[0].message.content;
       const analysis = JSON.parse(analysisText || "{}");
 
-      // Return the analysis along with file info
       res.json({
         analysis,
         file: {
           id: req.file.filename,
           path: req.file.path,
           originalName: req.file.originalname,
-          mimeType
+          mimeType: artifact.mimeType,
+          fileType: artifact.fileType
         }
       });
     } catch (error: any) {

@@ -217,7 +217,7 @@ export default function AIBucket() {
           AI Bucket
         </h1>
         <p className="text-muted-foreground mt-1">
-          Drop or paste an image/screenshot and AI will figure out which client it belongs to and create a timeline entry
+          Drop or paste an image, PDF, or DOCX file and AI will figure out which client it belongs to and create a timeline entry
         </p>
       </div>
 
@@ -252,7 +252,7 @@ export default function AIBucket() {
                 id="file-input"
                 type="file"
                 className="hidden"
-                accept="image/*,.pdf"
+                accept="image/*,.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 onChange={handleFileSelect}
                 disabled={isAnalyzing}
                 data-testid="input-file-ai-bucket"
@@ -275,7 +275,7 @@ export default function AIBucket() {
                       or <span className="text-primary underline">click to browse</span>
                     </p>
                     <p className="text-xs text-muted-foreground mt-2">
-                      Supports: PNG, JPG, GIF, WebP, PDF
+                      Supports: PNG, JPG, GIF, WebP, PDF, DOCX
                     </p>
                   </div>
                 </div>
@@ -446,7 +446,7 @@ export default function AIBucket() {
               <Sparkles className="h-16 w-16 text-muted-foreground/30 mb-4" />
               <h3 className="text-lg font-medium text-muted-foreground">No Analysis Yet</h3>
               <p className="text-sm text-muted-foreground/70 max-w-xs mt-2">
-                Upload or paste an image and the AI will analyze it to extract client information, dates, and create a timeline entry.
+                Upload or paste an image, PDF, or DOCX and the AI will analyze it to extract client information, dates, and create a timeline entry.
               </p>
             </CardContent>
           </Card>
