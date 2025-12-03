@@ -163,9 +163,9 @@ export default function Parties() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="font-normal text-muted-foreground">
+                    <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-normal text-muted-foreground badge-static">
                       {party.type}
-                    </Badge>
+                    </span>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     <div className="flex flex-col">

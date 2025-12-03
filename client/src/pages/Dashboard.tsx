@@ -179,7 +179,7 @@ export default function Dashboard() {
               <Clock className="h-5 w-5 text-amber-500" />
               Upcoming Maturities
               {upcomingMaturities.length > 0 && (
-                <Badge variant="secondary" className="ml-auto">{upcomingMaturities.length}</Badge>
+                <span className="ml-auto inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground badge-static">{upcomingMaturities.length}</span>
               )}
             </CardTitle>
           </CardHeader>
@@ -197,10 +197,14 @@ export default function Dashboard() {
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
                           {new Date(agreement.maturityDate!).toLocaleDateString()}
                         </span>
-                        <Badge variant={getUrgencyColor(agreement.daysUntil) as any} className="whitespace-nowrap">
+                        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap badge-static ${
+                          agreement.daysUntil! <= 7 ? 'bg-destructive/10 text-destructive' :
+                          agreement.daysUntil! <= 30 ? 'bg-amber-500/10 text-amber-700' :
+                          'bg-secondary text-secondary-foreground'
+                        }`}>
                           {agreement.daysUntil! < 0 ? `${Math.abs(agreement.daysUntil!)}d overdue` : 
                            agreement.daysUntil === 0 ? "Today" : `${agreement.daysUntil}d`}
-                        </Badge>
+                        </span>
                       </div>
                     </div>
                   </Link>
@@ -220,7 +224,7 @@ export default function Dashboard() {
               <Calendar className="h-5 w-5 text-amber-500" />
               Expiring Documents
               {expiringDocuments.length > 0 && (
-                <Badge variant="secondary" className="ml-auto">{expiringDocuments.length}</Badge>
+                <span className="ml-auto inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground badge-static">{expiringDocuments.length}</span>
               )}
             </CardTitle>
           </CardHeader>
@@ -237,10 +241,14 @@ export default function Dashboard() {
                       <span className="text-xs text-muted-foreground whitespace-nowrap">
                         {new Date(doc.expirationDate!).toLocaleDateString()}
                       </span>
-                      <Badge variant={getUrgencyColor(doc.daysUntil) as any} className="whitespace-nowrap">
+                      <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap badge-static ${
+                        doc.daysUntil! <= 7 ? 'bg-destructive/10 text-destructive' :
+                        doc.daysUntil! <= 30 ? 'bg-amber-500/10 text-amber-700' :
+                        'bg-secondary text-secondary-foreground'
+                      }`}>
                         {doc.daysUntil! < 0 ? `${Math.abs(doc.daysUntil!)}d expired` : 
                          doc.daysUntil === 0 ? "Today" : `${doc.daysUntil}d`}
-                      </Badge>
+                      </span>
                     </div>
                   </div>
                 ))}

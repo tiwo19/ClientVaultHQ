@@ -41,6 +41,47 @@
   --font-serif: 'Merriweather', serif;
 }
 
+/* Hide scrollbar but allow scrolling */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Tab styling - clean underline without extra spacing */
+.tab-clean {
+  position: relative;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+.tab-clean[data-state="active"]::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: hsl(var(--primary));
+}
+
+/* Non-clickable badge - no hover effects */
+.badge-static {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Clickable link styling */
+.link-clickable {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.link-clickable:hover {
+  text-decoration: underline;
+}
+
 :root {
   /* Professional, authoritative, slight blue tint - "Trust & Law" */
   --background: 210 20% 98%;

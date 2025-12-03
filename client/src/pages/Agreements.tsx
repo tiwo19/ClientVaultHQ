@@ -415,8 +415,8 @@ export default function Agreements() {
                                   <Card className={`hover:shadow-md transition-shadow border-l-4 ${selectedAgreements.has(agreement.id) ? 'border-l-primary ring-2 ring-primary/30' : 'border-l-muted'}`} data-testid={`card-agreement-${agreement.id}`}>
                                     <CardHeader className="p-3 pb-0 pl-9">
                                       <div className="flex justify-between items-start mb-1">
-                                        <Badge variant="outline" className="text-[10px] uppercase">{agreement.type}</Badge>
-                                        {agreement.isSecured && <Badge variant="secondary" className="text-[10px]">Secured</Badge>}
+                                        <span className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground badge-static">{agreement.type}</span>
+                                        {agreement.isSecured && <span className="inline-flex items-center rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground badge-static">Secured</span>}
                                       </div>
                                       <CardTitle className="text-sm font-bold leading-tight">
                                         {agreement.title}
@@ -438,8 +438,8 @@ export default function Agreements() {
                                   <Card className="cursor-pointer hover:shadow-md transition-shadow border-l-4 border-l-primary" data-testid={`card-agreement-${agreement.id}`}>
                                     <CardHeader className="p-3 pb-0">
                                       <div className="flex justify-between items-start mb-1">
-                                        <Badge variant="outline" className="text-[10px] uppercase">{agreement.type}</Badge>
-                                        {agreement.isSecured && <Badge variant="secondary" className="text-[10px]">Secured</Badge>}
+                                        <span className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground badge-static">{agreement.type}</span>
+                                        {agreement.isSecured && <span className="inline-flex items-center rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground badge-static">Secured</span>}
                                       </div>
                                       <CardTitle className="text-sm font-bold leading-tight text-primary hover:underline">
                                         {agreement.title}
