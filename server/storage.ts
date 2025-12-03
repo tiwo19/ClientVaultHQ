@@ -8,9 +8,12 @@ import {
   type Document, type InsertDocument,
   type PartyRelationship, type InsertPartyRelationship,
   type CreditTransaction, type InsertCreditTransaction,
-  users, parties, persons, agreements, activities, documents, partyRelationships, creditTransactions
+  type ContactPoint, type InsertContactPoint,
+  type Address, type InsertAddress,
+  users, parties, persons, agreements, activities, documents, partyRelationships, creditTransactions,
+  contactPoints, addresses
 } from "@shared/schema";
-import { eq, or, desc, sql } from "drizzle-orm";
+import { eq, or, and, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -63,6 +66,20 @@ export interface IStorage {
   deductCredits(userId: string, amount: number, description: string): Promise<CreditTransaction>;
   getCreditTransactions(userId: string): Promise<CreditTransaction[]>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
+
+  // Contact Points
+  getContactPointsByParty(partyId: string): Promise<ContactPoint[]>;
+  getContactPointsByPerson(personId: string): Promise<ContactPoint[]>;
+  createContactPoint(cp: InsertContactPoint): Promise<ContactPoint>;
+  updateContactPoint(id: string, cp: Partial<InsertContactPoint>): Promise<ContactPoint | undefined>;
+  deleteContactPoint(id: string): Promise<void>;
+
+  // Addresses
+  getAddressesByParty(partyId: string): Promise<Address[]>;
+  getAddressesByPerson(personId: string): Promise<Address[]>;
+  createAddress(addr: InsertAddress): Promise<Address>;
+  updateAddress(id: string, addr: Partial<InsertAddress>): Promise<Address | undefined>;
+  deleteAddress(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -267,6 +284,60 @@ export class DbStorage implements IStorage {
     await db.update(users)
       .set({ stripeCustomerId })
       .where(eq(users.id, userId));
+  }
+
+  // Contact Points
+  async getContactPointsByParty(partyId: string): Promise<ContactPoint[]> {
+    return await db.select().from(contactPoints).where(
+      and(eq(contactPoints.ownerType, "party"), eq(contactPoints.partyId, partyId))
+    );
+  }
+
+  async getContactPointsByPerson(personId: string): Promise<ContactPoint[]> {
+    return await db.select().from(contactPoints).where(
+      and(eq(contactPoints.ownerType, "person"), eq(contactPoints.personId, personId))
+    );
+  }
+
+  async createContactPoint(cp: InsertContactPoint): Promise<ContactPoint> {
+    const result = await db.insert(contactPoints).values(cp).returning();
+    return result[0];
+  }
+
+  async updateContactPoint(id: string, cp: Partial<InsertContactPoint>): Promise<ContactPoint | undefined> {
+    const result = await db.update(contactPoints).set(cp).where(eq(contactPoints.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteContactPoint(id: string): Promise<void> {
+    await db.delete(contactPoints).where(eq(contactPoints.id, id));
+  }
+
+  // Addresses
+  async getAddressesByParty(partyId: string): Promise<Address[]> {
+    return await db.select().from(addresses).where(
+      and(eq(addresses.ownerType, "party"), eq(addresses.partyId, partyId))
+    );
+  }
+
+  async getAddressesByPerson(personId: string): Promise<Address[]> {
+    return await db.select().from(addresses).where(
+      and(eq(addresses.ownerType, "person"), eq(addresses.personId, personId))
+    );
+  }
+
+  async createAddress(addr: InsertAddress): Promise<Address> {
+    const result = await db.insert(addresses).values(addr).returning();
+    return result[0];
+  }
+
+  async updateAddress(id: string, addr: Partial<InsertAddress>): Promise<Address | undefined> {
+    const result = await db.update(addresses).set(addr).where(eq(addresses.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteAddress(id: string): Promise<void> {
+    await db.delete(addresses).where(eq(addresses.id, id));
   }
 }
 
