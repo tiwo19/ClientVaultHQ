@@ -13,9 +13,7 @@ import OpenAI from "openai";
 import Stripe from "stripe";
 import { prepareForAnalysis, isPreprocessingError } from "./services/documentPreprocessor";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-  apiVersion: "2025-04-30.basil",
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
 
 const CREDITS_PER_DOLLAR = 100;
 
@@ -651,8 +649,9 @@ Respond with JSON in this exact format:
     try {
       const { amount } = req.body;
       
-      if (!amount || amount < 5 || amount > 1000) {
-        return res.status(400).json({ error: "Amount must be between $5 and $1000" });
+      const numAmount = Number(amount);
+      if (!Number.isInteger(numAmount) || numAmount < 5 || numAmount > 1000) {
+        return res.status(400).json({ error: "Amount must be a whole number between $5 and $1000" });
       }
 
       const user = await storage.getUser(req.session.userId!);
@@ -660,7 +659,7 @@ Respond with JSON in this exact format:
         return res.status(401).json({ error: "User not found" });
       }
 
-      const creditsToAdd = amount * CREDITS_PER_DOLLAR;
+      const creditsToAdd = numAmount * CREDITS_PER_DOLLAR;
       const baseUrl = `${req.protocol}://${req.get('host')}`;
 
       const session = await stripe.checkout.sessions.create({
@@ -673,7 +672,7 @@ Respond with JSON in this exact format:
                 name: `${creditsToAdd} Credits`,
                 description: `Purchase ${creditsToAdd} credits for LegalFlow ($1 = ${CREDITS_PER_DOLLAR} credits)`,
               },
-              unit_amount: amount * 100,
+              unit_amount: numAmount * 100,
             },
             quantity: 1,
           },
@@ -748,7 +747,7 @@ Respond with JSON in this exact format:
         const userId = session.metadata?.userId;
         const creditsToAdd = parseInt(session.metadata?.creditsToAdd || "0", 10);
         
-        if (userId === req.session.userId && creditsToAdd > 0) {
+        if (userId && userId === req.session.userId && creditsToAdd > 0) {
           const currentCredits = await storage.getUserCredits(userId);
           res.json({ 
             success: true, 
