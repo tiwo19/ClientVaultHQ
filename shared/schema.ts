@@ -10,11 +10,28 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   password: text("password").notNull(),
   role: text("role").notNull().default("User"),
+  credits: integer("credits").notNull().default(0),
+  stripeCustomerId: text("stripe_customer_id"),
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({ id: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, credits: true, stripeCustomerId: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+// Credit transactions table for tracking credit purchases and usage
+export const creditTransactions = pgTable("credit_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // "purchase", "usage", "refund", "bonus"
+  amount: integer("amount").notNull(), // positive for credits added, negative for credits used
+  description: text("description").notNull(),
+  stripePaymentIntentId: text("stripe_payment_intent_id"), // For purchases
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertCreditTransactionSchema = createInsertSchema(creditTransactions).omit({ id: true, createdAt: true });
+export type InsertCreditTransaction = z.infer<typeof insertCreditTransactionSchema>;
+export type CreditTransaction = typeof creditTransactions.$inferSelect;
 
 // Parties table
 export const parties = pgTable("parties", {
