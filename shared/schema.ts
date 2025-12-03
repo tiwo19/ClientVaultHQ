@@ -180,3 +180,69 @@ export const partyRelationships = pgTable("party_relationships", {
 export const insertPartyRelationshipSchema = createInsertSchema(partyRelationships).omit({ id: true });
 export type InsertPartyRelationship = z.infer<typeof insertPartyRelationshipSchema>;
 export type PartyRelationship = typeof partyRelationships.$inferSelect;
+
+// Contact point types for due diligence
+export const contactPointTypes = ["email", "phone"] as const;
+export type ContactPointType = typeof contactPointTypes[number];
+
+export const contactPointLabels = [
+  "Work",
+  "Mobile", 
+  "Home",
+  "Personal",
+  "Fax",
+  "Other"
+] as const;
+export type ContactPointLabel = typeof contactPointLabels[number];
+
+// Contact Points table (emails and phone numbers)
+export const contactPoints = pgTable("contact_points", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ownerType: text("owner_type").notNull(), // "party" or "person"
+  partyId: varchar("party_id").references(() => parties.id, { onDelete: "cascade" }),
+  personId: varchar("person_id").references(() => persons.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // "email" or "phone"
+  value: text("value").notNull(),
+  label: text("label").notNull().default("Work"), // Work, Mobile, Home, Personal, Fax, Other
+  isPrimary: boolean("is_primary").notNull().default(false),
+  isVerified: boolean("is_verified").notNull().default(false),
+  notes: text("notes"),
+});
+
+export const insertContactPointSchema = createInsertSchema(contactPoints).omit({ id: true });
+export type InsertContactPoint = z.infer<typeof insertContactPointSchema>;
+export type ContactPoint = typeof contactPoints.$inferSelect;
+
+// Address labels for due diligence
+export const addressLabels = [
+  "Primary",
+  "Mailing",
+  "Business",
+  "Registered",
+  "Previous",
+  "Alternate",
+  "Other"
+] as const;
+export type AddressLabel = typeof addressLabels[number];
+
+// Addresses table (known addresses for due diligence)
+export const addresses = pgTable("addresses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ownerType: text("owner_type").notNull(), // "party" or "person"
+  partyId: varchar("party_id").references(() => parties.id, { onDelete: "cascade" }),
+  personId: varchar("person_id").references(() => persons.id, { onDelete: "cascade" }),
+  label: text("label").notNull().default("Primary"), // Primary, Mailing, Business, Registered, Previous, Alternate, Other
+  street1: text("street1").notNull(),
+  street2: text("street2"),
+  city: text("city").notNull(),
+  state: text("state"),
+  postalCode: text("postal_code"),
+  country: text("country").notNull().default("USA"),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  isVerified: boolean("is_verified").notNull().default(false),
+  notes: text("notes"),
+});
+
+export const insertAddressSchema = createInsertSchema(addresses).omit({ id: true });
+export type InsertAddress = z.infer<typeof insertAddressSchema>;
+export type Address = typeof addresses.$inferSelect;
