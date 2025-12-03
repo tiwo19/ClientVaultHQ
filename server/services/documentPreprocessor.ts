@@ -1,7 +1,5 @@
 import fs from "fs";
 import path from "path";
-import pdfParse from "pdf-parse";
-import mammoth from "mammoth";
 
 export interface PreparedArtifact {
   fileType: "image" | "pdf" | "docx";
@@ -58,6 +56,8 @@ async function processPdf(filePath: string): Promise<PreparedArtifact> {
   const fileBuffer = fs.readFileSync(filePath);
   
   try {
+    const pdfParseModule = await import("pdf-parse");
+    const pdfParse = pdfParseModule.default || pdfParseModule;
     const pdfData = await pdfParse(fileBuffer);
     const extractedText = pdfData.text?.trim() || "";
     
@@ -91,6 +91,8 @@ async function processPdf(filePath: string): Promise<PreparedArtifact> {
 
 async function processDocx(filePath: string): Promise<PreparedArtifact> {
   try {
+    const mammothModule = await import("mammoth");
+    const mammoth = mammothModule.default || mammothModule;
     const result = await mammoth.extractRawText({ path: filePath });
     const extractedText = result.value?.trim() || "";
     

@@ -1,10 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
-
-const cjsBanner = `
-var __cjs_import_meta_url__ = typeof document === 'undefined' ? 'file://' + __filename : (document.currentScript && document.currentScript.src || new URL('index.cjs', document.baseURI).href);
-`;
+import { rm, readFile, writeFile, mkdir } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -56,14 +52,8 @@ async function buildAll() {
     bundle: true,
     format: "cjs",
     outfile: "dist/index.cjs",
-    banner: {
-      js: cjsBanner,
-    },
     define: {
       "process.env.NODE_ENV": '"production"',
-      "import.meta.dirname": "__dirname",
-      "import.meta.filename": "__filename",
-      "import.meta.url": "__cjs_import_meta_url__",
     },
     minify: true,
     external: externals,
