@@ -1,8 +1,8 @@
-# LegalFlow - Contract Management System
+# Work Digital Client Vault
 
 ## Overview
 
-LegalFlow is a private back-office contract and client management portal designed for internal legal operations. The system manages parties (companies, individuals, trusts, funds), agreements (contracts, loans, JVs), documents, and activities while tracking enforcement stages for collections and litigation preparation. Built with React, Express, and PostgreSQL, it provides Kanban-style workflows for agreement lifecycle management and enforcement tracking.
+Work Digital Client Vault is a private back-office contract and client management portal designed for internal legal operations. The system manages parties (companies, individuals, trusts, funds), agreements (contracts, loans, JVs), documents, and activities while tracking enforcement stages for collections and litigation preparation. Built with React, Express, and PostgreSQL, it provides Kanban-style workflows for agreement lifecycle management and enforcement tracking. Features Basel IV compliant contact management for positive party identification.
 
 ## User Preferences
 

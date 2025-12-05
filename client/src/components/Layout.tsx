@@ -50,8 +50,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const NavContent = () => (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
-      <div className="p-6 flex items-center gap-3 border-b border-sidebar-border/50">
-        <WorkDigitalLogo className="h-8 w-auto text-sidebar-primary-foreground" />
+      <div className="p-5 border-b border-sidebar-border/50">
+        <div className="flex items-center gap-3 mb-2">
+          <WorkDigitalLogo className="h-7 w-auto text-sidebar-primary-foreground" />
+        </div>
+        <h1 className="text-lg font-serif font-bold text-sidebar-foreground tracking-tight">
+          Client Vault
+        </h1>
+        <p className="text-[10px] uppercase tracking-widest text-sidebar-foreground/50 mt-0.5">
+          Contract & Party Management
+        </p>
       </div>
       
       <div className="flex-1 py-6 px-4 space-y-1">
