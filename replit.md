@@ -158,9 +158,14 @@ Preferred communication style: Simple, everyday language.
 - `SESSION_SECRET` - Secret key for session signing (optional, has default)
 - `NODE_ENV` - Environment mode (development/production)
 
+**AWS S3 Storage (December 2024):**
+- Documents now stored in AWS S3 bucket for durability and scalability
+- S3 service module at `server/services/s3Storage.ts`
+- Automatic fallback to local storage if S3 credentials not configured
+- Uses presigned URLs for secure document downloads
+- Environment variables required: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET`, `AWS_REGION`
+- Documents stored with `s3://` prefix in database `filePath` field
+
 **Future Considerations:**
-- Supabase integration mentioned in original README but not implemented
-- Could migrate from Neon to Supabase PostgreSQL
-- File storage could move to cloud provider (S3, Supabase Storage, etc.)
 - Session store should use PostgreSQL (connect-pg-simple) or Redis in production
 - Email notifications (nodemailer dependency present but unused)
