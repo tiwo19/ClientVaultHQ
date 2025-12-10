@@ -12,6 +12,7 @@ import fs from "fs";
 import OpenAI from "openai";
 import Stripe from "stripe";
 import { prepareForAnalysis, isPreprocessingError } from "./services/documentPreprocessor";
+import { uploadToS3, getSignedDownloadUrl, deleteFromS3, generateS3Key, isS3Configured } from "./services/s3Storage";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
 
@@ -22,13 +23,20 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const MemoryStore = createMemoryStore(session);
 
-// Setup file upload
+// Setup file upload - use memory storage for S3 uploads, fallback to disk for local
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const upload = multer({
+// Memory storage for S3 uploads
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+});
+
+// Disk storage for local fallback
+const diskUpload = multer({
   storage: multer.diskStorage({
     destination: uploadDir,
     filename: (req, file, cb) => {
@@ -37,6 +45,9 @@ const upload = multer({
     }
   })
 });
+
+// Use memory upload if S3 is configured, otherwise disk
+const upload = memoryUpload;
 
 declare module "express-session" {
   interface SessionData {
@@ -540,6 +551,21 @@ export async function registerRoutes(
       }
 
       const { agreementId, partyId, type, category, expirationDate, notes } = req.body;
+      let filePath: string;
+
+      // Upload to S3 if configured, otherwise save locally
+      if (isS3Configured()) {
+        const s3Key = generateS3Key(req.file.originalname);
+        await uploadToS3(req.file.buffer, s3Key, req.file.mimetype);
+        filePath = `s3://${s3Key}`;
+      } else {
+        // Fallback to local storage - save buffer to disk
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const fileName = uniqueSuffix + '-' + req.file.originalname;
+        filePath = path.join(uploadDir, fileName);
+        fs.writeFileSync(filePath, req.file.buffer);
+      }
+
       const docData = {
         agreementId: agreementId || null,
         partyId: partyId || null,
@@ -548,12 +574,13 @@ export async function registerRoutes(
         category: category || "Other",
         expirationDate: expirationDate || null,
         notes: notes || null,
-        filePath: req.file.path
+        filePath
       };
 
       const document = await storage.createDocument(docData);
       res.json(document);
     } catch (error: any) {
+      console.error("Document upload error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -567,8 +594,20 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Document not found" });
       }
 
+      // Check if document is stored in S3
+      if (document.filePath.startsWith("s3://")) {
+        const s3Key = document.filePath.replace("s3://", "");
+        const signedUrl = await getSignedDownloadUrl(s3Key);
+        return res.redirect(signedUrl);
+      }
+
+      // Fallback to local file download
+      if (!fs.existsSync(document.filePath)) {
+        return res.status(404).json({ error: "File not found on disk" });
+      }
       res.download(document.filePath, document.name);
     } catch (error: any) {
+      console.error("Document download error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -578,8 +617,19 @@ export async function registerRoutes(
       const documents = await storage.getAllDocuments();
       const document = documents.find(d => d.id === req.params.id);
       
-      if (document?.filePath && fs.existsSync(document.filePath)) {
-        fs.unlinkSync(document.filePath);
+      if (document?.filePath) {
+        // Delete from S3 if stored there
+        if (document.filePath.startsWith("s3://")) {
+          const s3Key = document.filePath.replace("s3://", "");
+          try {
+            await deleteFromS3(s3Key);
+          } catch (err) {
+            console.error("Failed to delete from S3:", err);
+          }
+        } else if (fs.existsSync(document.filePath)) {
+          // Delete local file
+          fs.unlinkSync(document.filePath);
+        }
       }
 
       await storage.deleteDocument(req.params.id);
@@ -635,11 +685,19 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No file uploaded" });
       }
 
+      // Save buffer to temp file for preprocessing (preprocessor needs file path)
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const tempFileName = uniqueSuffix + '-' + req.file.originalname;
+      const tempFilePath = path.join(uploadDir, tempFileName);
+      fs.writeFileSync(tempFilePath, req.file.buffer);
+
       // Preprocess the file based on its type
       let artifact;
       try {
-        artifact = await prepareForAnalysis(req.file.path, req.file.originalname);
+        artifact = await prepareForAnalysis(tempFilePath, req.file.originalname);
       } catch (error) {
+        // Clean up temp file on error
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
         if (isPreprocessingError(error)) {
           return res.status(400).json({ error: error.message, code: error.code });
         }
@@ -728,8 +786,8 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
       res.json({
         analysis,
         file: {
-          id: req.file.filename,
-          path: req.file.path,
+          id: tempFileName,
+          path: tempFilePath,
           originalName: req.file.originalname,
           mimeType: artifact.mimeType,
           fileType: artifact.fileType
@@ -763,7 +821,7 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
 
       let imageUrl: string | null = null;
 
-      // If there's a file, validate it's in our uploads directory and create a document
+      // If there's a file, validate and upload to S3 or keep locally
       if (filePath && originalName) {
         // Security: Validate the file path is within uploads directory
         const normalizedPath = path.normalize(filePath);
@@ -778,13 +836,31 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
           return res.status(400).json({ error: "File not found" });
         }
 
+        let finalFilePath: string;
+
+        // Upload to S3 if configured
+        if (isS3Configured()) {
+          const fileBuffer = fs.readFileSync(normalizedPath);
+          const ext = path.extname(originalName).toLowerCase();
+          const mimeType = ext === '.pdf' ? 'application/pdf' : 
+                          ext === '.docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
+                          `image/${ext.replace('.', '')}`;
+          const s3Key = generateS3Key(originalName);
+          await uploadToS3(fileBuffer, s3Key, mimeType);
+          finalFilePath = `s3://${s3Key}`;
+          // Clean up temp file after S3 upload
+          fs.unlinkSync(normalizedPath);
+        } else {
+          finalFilePath = normalizedPath;
+        }
+
         const doc = await storage.createDocument({
           partyId,
           agreementId: null,
           name: originalName,
           type: "Image",
           category: "Other",
-          filePath: normalizedPath,
+          filePath: finalFilePath,
           expirationDate: null,
           notes: "Uploaded via AI Bucket"
         });
