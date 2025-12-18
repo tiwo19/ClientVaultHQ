@@ -187,7 +187,14 @@ Preferred communication style: Simple, everyday language.
   - Timeline auto-logging for TaskCreated, TaskCompleted, TaskDeleted events
   - Tasks tab in EngagementDetail with task list, status toggle, create/delete actions
   - Global search enhanced to include engagements (by name, description, type, reference number)
-- Remaining: Phase 5 (Exports + AI Advisor)
+- Phase 5: Exports + AI Advisor
+  - Export endpoints: GET /engagements/:id/export/timeline, /documents, /tasks (CSV), /summary (JSON)
+  - RBAC enforcement: export requires owner/internal_admin/auditor role
+  - AI Advisor endpoint: POST /engagements/:id/ai-advisor using OpenAI GPT-4o
+  - AI context includes: engagement details, parties, agreements, documents, tasks, recent timeline
+  - RBAC enforcement: AI advisor requires owner/internal_admin/internal_user role
+  - Timeline auto-logging for AIAdvisorQuery events
+  - Frontend: Export tab with download buttons, AI Advisor tab with chat interface
 
 **Future Considerations:**
 - Session store should use PostgreSQL (connect-pg-simple) or Redis in production

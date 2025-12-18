@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File, History, CheckSquare, Circle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File, History, CheckSquare, Circle, CheckCircle2, Bot, Send, FileDown } from "lucide-react";
 import { useState, useMemo, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -85,6 +85,64 @@ export default function EngagementDetail() {
   const [newTaskPriority, setNewTaskPriority] = useState<string>("Medium");
   const [newTaskDueDate, setNewTaskDueDate] = useState("");
   const [newTaskAssignee, setNewTaskAssignee] = useState("");
+
+  // AI Advisor state
+  const [aiQuestion, setAiQuestion] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiHistory, setAiHistory] = useState<Array<{question: string, answer: string}>>([]);
+
+  // Export handlers
+  const handleExport = async (type: "timeline" | "documents" | "tasks" | "summary") => {
+    try {
+      const response = await fetch(`/api/engagements/${id}/export/${type}`, { credentials: "include" });
+      if (!response.ok) throw new Error("Export failed");
+      
+      const contentDisposition = response.headers.get("Content-Disposition");
+      const filenameMatch = contentDisposition?.match(/filename="([^"]+)"/);
+      const filename = filenameMatch ? filenameMatch[1] : `export_${type}.${type === "summary" ? "json" : "csv"}`;
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({ title: "Export successful", description: `Downloaded ${filename}` });
+    } catch (error: any) {
+      toast({ title: "Export failed", description: error.message, variant: "destructive" });
+    }
+  };
+
+  // AI Advisor handler
+  const handleAskAi = async () => {
+    if (!aiQuestion.trim() || isAiLoading) return;
+    
+    setIsAiLoading(true);
+    try {
+      const response = await fetch(`/api/engagements/${id}/ai-advisor`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ question: aiQuestion })
+      });
+      
+      if (!response.ok) throw new Error("Failed to get AI response");
+      
+      const data = await response.json();
+      setAiHistory(prev => [...prev, { question: aiQuestion, answer: data.answer }]);
+      setAiQuestion("");
+      setAiResponse(data.answer);
+    } catch (error: any) {
+      toast({ title: "AI Advisor error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
 
   const { data: engagement, isLoading } = useQuery<Engagement>({
     queryKey: ["/api/engagements", id],
@@ -590,6 +648,14 @@ export default function EngagementDetail() {
           <TabsTrigger value="tasks" data-testid="tab-tasks">
             <CheckSquare className="mr-2 h-4 w-4" />
             Tasks ({tasks.length})
+          </TabsTrigger>
+          <TabsTrigger value="ai-advisor" data-testid="tab-ai-advisor">
+            <Bot className="mr-2 h-4 w-4" />
+            AI Advisor
+          </TabsTrigger>
+          <TabsTrigger value="exports" data-testid="tab-exports">
+            <FileDown className="mr-2 h-4 w-4" />
+            Export
           </TabsTrigger>
         </TabsList>
 
@@ -1476,6 +1542,168 @@ export default function EngagementDetail() {
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="ai-advisor">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bot className="h-5 w-5" />
+                AI Advisor
+              </CardTitle>
+              <CardDescription>
+                Ask questions about this engagement. The AI has context about parties, agreements, documents, tasks, and recent activity.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {aiHistory.length > 0 && (
+                  <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4 bg-muted/30">
+                    {aiHistory.map((item, i) => (
+                      <div key={i} className="space-y-2">
+                        <div className="flex items-start gap-2">
+                          <div className="bg-primary text-primary-foreground rounded-full p-1.5 shrink-0">
+                            <Users className="h-3 w-3" />
+                          </div>
+                          <p className="text-sm font-medium">{item.question}</p>
+                        </div>
+                        <div className="flex items-start gap-2 ml-6">
+                          <div className="bg-secondary rounded-full p-1.5 shrink-0">
+                            <Bot className="h-3 w-3" />
+                          </div>
+                          <div className="text-sm prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: item.answer.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Ask about risks, deadlines, next steps, or get recommendations..."
+                    value={aiQuestion}
+                    onChange={(e) => setAiQuestion(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleAskAi()}
+                    disabled={isAiLoading}
+                    data-testid="input-ai-question"
+                    className="flex-1"
+                  />
+                  <Button 
+                    onClick={handleAskAi} 
+                    disabled={!aiQuestion.trim() || isAiLoading}
+                    data-testid="button-ask-ai"
+                  >
+                    {isAiLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                
+                <div className="text-xs text-muted-foreground">
+                  Example questions: "What are the key risks?", "Summarize recent activity", "What tasks are overdue?", "Recommend next steps"
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="exports">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileDown className="h-5 w-5" />
+                Export Engagement Data
+              </CardTitle>
+              <CardDescription>
+                Download engagement data for reporting, evidence bundles, or external analysis.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-2">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      Timeline Export
+                    </CardTitle>
+                    <CardDescription>Export all timeline entries as CSV</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button 
+                      onClick={() => handleExport("timeline")} 
+                      className="w-full"
+                      data-testid="button-export-timeline"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Download Timeline CSV
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-2">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <File className="h-4 w-4" />
+                      Documents Export
+                    </CardTitle>
+                    <CardDescription>Export document list and metadata as CSV</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button 
+                      onClick={() => handleExport("documents")} 
+                      className="w-full"
+                      data-testid="button-export-documents"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Download Documents CSV
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-2">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <CheckSquare className="h-4 w-4" />
+                      Tasks Export
+                    </CardTitle>
+                    <CardDescription>Export all tasks with status and assignees as CSV</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button 
+                      onClick={() => handleExport("tasks")} 
+                      className="w-full"
+                      data-testid="button-export-tasks"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Download Tasks CSV
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-2">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Briefcase className="h-4 w-4" />
+                      Summary Report
+                    </CardTitle>
+                    <CardDescription>Full engagement summary with statistics as JSON</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button 
+                      onClick={() => handleExport("summary")} 
+                      className="w-full"
+                      data-testid="button-export-summary"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Download Summary JSON
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
