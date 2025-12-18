@@ -196,6 +196,22 @@ Preferred communication style: Simple, everyday language.
   - Timeline auto-logging for AIAdvisorQuery events
   - Frontend: Export tab with download buttons, AI Advisor tab with chat interface
 
+**AI Governance Control Plane (December 2024):**
+- Hierarchical policy system: GLOBAL → CLIENT → PROJECT → ARTIFACT scopes
+- Database tables: governance_policies, ai_personas, ai_actions_log, governance_approvals
+- AI action types: AI_SUMMARIZE, AI_ANALYZE, AI_ADVISOR, AI_REWRITE, AI_LEGAL_DRAFT, AI_EXPORT
+- Classification rules: blocks AI on ATTORNEY_PRIVILEGED, RESTRICTED artifacts
+- Policy merging: most restrictive wins across scope hierarchy
+- Server modules: server/governance/ (types, schema, registry, merge, evaluator, hash, seed)
+- enforceGovernance middleware for backend AI action enforcement
+- useGovernance React hook for frontend UI gating with can() method
+- Seed data: 3 AI personas (DDIE, VAULT_SUMMARIZER, LEGAL_DRAFTER), global policy allowing summarize/analyze/advisor
+- Default policy requires supervisor approval for AI_REWRITE, AI_LEGAL_DRAFT, AI_EXPORT
+- AI actions logged to append-only ai_actions_log with SHA256 hash for audit integrity
+- UI shows "Requires Approval" badge for supervisor-needed actions, disables blocked actions
+
 **Future Considerations:**
 - Session store should use PostgreSQL (connect-pg-simple) or Redis in production
 - Email notifications (nodemailer dependency present but unused)
+- Governance admin UI for managing policies and approvals
+- Supervisor approval workflow UI for pending approvals
