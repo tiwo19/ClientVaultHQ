@@ -316,6 +316,12 @@ export default function EngagementDetail() {
     }
   });
 
+  // Filtered timeline - must be before early returns to maintain hook order
+  const filteredTimeline = useMemo(() => {
+    if (timelineTypeFilter === "all") return timeline;
+    return timeline.filter(a => a.type === timelineTypeFilter);
+  }, [timeline, timelineTypeFilter]);
+
   const startEditing = () => {
     if (engagement) {
       setEditName(engagement.name);
@@ -371,11 +377,6 @@ export default function EngagementDetail() {
   const existingPartyIds = engagementParties.map((ep: any) => ep.partyId);
   const availablePartyList = allParties.filter((p: Party) => !existingPartyIds.includes(p.id));
 
-  // Filtered timeline
-  const filteredTimeline = useMemo(() => {
-    if (timelineTypeFilter === "all") return timeline;
-    return timeline.filter(a => a.type === timelineTypeFilter);
-  }, [timeline, timelineTypeFilter]);
   const existingAgreementIds = engagementAgreements.map((ea: any) => ea.agreementId);
   const availableAgreementList = allAgreements.filter((a: Agreement) => !existingAgreementIds.includes(a.id));
 
