@@ -1,14 +1,16 @@
 import { useState, useMemo, useEffect } from "react";
 import { useData } from "@/lib/data";
+import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, FileText, Users, Building, User, Briefcase } from "lucide-react";
+import { Search, FileText, Users, Building, User, Briefcase, FolderKanban } from "lucide-react";
 import { useLocation } from "wouter";
+import type { Engagement } from "@shared/schema";
 
 interface SearchResult {
   id: string;
-  type: "party" | "agreement" | "person" | "document";
+  type: "party" | "agreement" | "person" | "document" | "engagement";
   title: string;
   subtitle: string;
   href: string;
@@ -23,6 +25,21 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
   const [search, setSearch] = useState("");
   const [, setLocation] = useLocation();
   const { parties, agreements, persons, documents } = useData();
+
+  const { data: engagements = [] } = useQuery<Engagement[]>({
+    queryKey: ["/api/engagements"],
+    queryFn: async () => {
+      try {
+        const res = await fetch("/api/engagements", { credentials: "include" });
+        if (!res.ok) return [];
+        return res.json();
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 30000,
+    retry: false
+  });
 
   useEffect(() => {
     if (!open) setSearch("");
@@ -104,8 +121,25 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
       }
     });
 
+    engagements.forEach(engagement => {
+      if (
+        engagement.name.toLowerCase().includes(searchLower) ||
+        engagement.description?.toLowerCase().includes(searchLower) ||
+        engagement.type.toLowerCase().includes(searchLower) ||
+        engagement.referenceNumber?.toLowerCase().includes(searchLower)
+      ) {
+        results.push({
+          id: engagement.id,
+          type: "engagement",
+          title: engagement.name,
+          subtitle: `${engagement.type} • ${engagement.status}`,
+          href: `/engagements/${engagement.id}`
+        });
+      }
+    });
+
     return results.slice(0, 15);
-  }, [search, parties, agreements, persons, documents]);
+  }, [search, parties, agreements, persons, documents, engagements]);
 
   const handleSelect = (result: SearchResult) => {
     setLocation(result.href);
@@ -122,6 +156,8 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
         return <User className="h-4 w-4" />;
       case "document":
         return <FileText className="h-4 w-4" />;
+      case "engagement":
+        return <FolderKanban className="h-4 w-4" />;
     }
   };
 
@@ -135,6 +171,8 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
         return "Contact";
       case "document":
         return "Document";
+      case "engagement":
+        return "Engagement";
     }
   };
 
