@@ -1,0 +1,415 @@
+Replit Agent Prompt (Copy/Paste)
+
+You are a senior full-stack engineer implementing an AI Governance Control Plane inside Client Vault.
+
+Non-negotiables
+
+Governance is enforced server-side (middleware), never “UI-only”.
+
+Every AI action is attributable (actor_id + persona_id).
+
+No overwrites: governance artifacts and AI events are append-only + versioned.
+
+Policy evaluation must support Global → Client Override → Project Override → Artifact Override, where more restrictive wins.
+
+When blocked, API returns a structured error: GOVERNANCE_DENIED with reasons + required escalation.
+
+UI must reflect gating in real time using a GET /api/governance/effective endpoint and disable actions + show tooltips.
+
+Tech assumptions
+
+Node/Express backend.
+
+Postgres (or Supabase) for persistence.
+
+Frontend in React (Vite/Next ok). Use existing auth patterns.
+
+There is an existing concept of client, project, artifact/document, timeline/events.
+
+If any of these differ, still implement with minimal adaptation and keep the same contracts.
+
+1) Governance Registry (DB + server modules)
+1.1 Database schema (create migrations)
+
+Create these tables:
+
+governance_policies
+
+id (uuid pk)
+
+scope_type (text enum: GLOBAL | CLIENT | PROJECT | ARTIFACT)
+
+scope_id (uuid nullable; null only for GLOBAL)
+
+version (int, increments per scope)
+
+status (text enum: DRAFT | PUBLISHED | ARCHIVED)
+
+policy_json (jsonb) — normalized policy object (see schema below)
+
+created_by (uuid)
+
+created_at (timestamptz default now())
+
+published_at (timestamptz nullable)
+
+hash (text) — sha256 hash of canonical JSON for audit integrity
+
+Constraints:
+
+Only one PUBLISHED per (scope_type, scope_id, version) obviously; but more importantly:
+
+Allow multiple versions; only one “active” published per scope at a time.
+
+Add index on (scope_type, scope_id, status, version desc).
+
+ai_personas
+
+id (uuid pk)
+
+key (text unique) e.g. DDIE, VAULT_SUMMARIZER
+
+name (text)
+
+description (text)
+
+capabilities (jsonb) — declared capability set (not final authority; governance is)
+
+created_at
+
+ai_actions_log (append-only)
+
+id (uuid pk)
+
+client_id (uuid)
+
+project_id (uuid nullable)
+
+artifact_id (uuid nullable)
+
+actor_type (text enum: HUMAN | AI | HYBRID)
+
+actor_id (uuid nullable) — authenticated user if available
+
+persona_id (uuid nullable)
+
+action_type (text) e.g. AI_SUMMARIZE, AI_REWRITE, AI_EXPORT
+
+request_context (jsonb) — includes route, ip, userAgent, input hashes
+
+decision (text enum: ALLOW | DENY)
+
+reasons (jsonb) — list of structured reason objects
+
+requires_supervisor (bool)
+
+supervisor_actor_id (uuid nullable)
+
+supervisor_decision_id (uuid nullable) // if you already have approvals table, link it; otherwise leave nullable
+
+created_at (timestamptz default now())
+
+hash (text) sha256 over canonical log row (minus hash field)
+
+Optional if you have approvals:
+
+If no approvals system exists, create governance_approvals:
+
+id uuid pk
+
+ai_actions_log_id uuid fk
+
+requested_by uuid
+
+status enum PENDING | APPROVED | REJECTED
+
+reviewed_by uuid nullable
+
+reviewed_at timestamptz nullable
+
+notes text nullable
+
+1.2 Governance policy JSON schema
+
+Implement and validate a JSON schema (zod or ajv). Policy object:
+
+{
+  "policyVersion": "1.0",
+  "aiAllowed": true,
+  "standing": { "client": "ACTIVE|RESTRICTED|TERMINATED|DISPUTED" },
+
+  "classificationRules": {
+    "defaultClassification": "CLIENT_PRIVATE",
+    "artifactOverrides": {
+      "ATTORNEY_PRIVILEGED": { "aiRead": false, "aiWrite": false },
+      "RESTRICTED": { "aiRead": false, "aiWrite": false }
+    }
+  },
+
+  "personas": {
+    "allowList": ["DDIE","VAULT_SUMMARIZER"],
+    "denyList": []
+  },
+
+  "capabilities": {
+    "AI_SUMMARIZE": { "allow": true, "requiresSupervisor": false },
+    "AI_REWRITE": { "allow": true, "requiresSupervisor": true },
+    "AI_LEGAL_DRAFT": { "allow": false, "requiresSupervisor": true },
+    "AI_EXPORT": { "allow": false, "requiresSupervisor": true }
+  },
+
+  "scopeGuards": {
+    "crossClientAccess": false,
+    "crossProjectAccess": false
+  },
+
+  "escalation": {
+    "supervisorRequiredFor": ["AI_REWRITE","AI_EXPORT","AI_LEGAL_DRAFT"],
+    "supervisorRoles": ["ADMIN","SUPERVISOR"]
+  }
+}
+
+
+Rules:
+
+More restrictive wins when merging.
+
+Missing action types default to deny.
+
+If aiAllowed=false at any scope, deny all AI actions at that scope.
+
+1.3 Server modules
+
+Create:
+
+server/governance/types.ts (Policy types + enums)
+
+server/governance/schema.ts (zod/ajv validator + canonicalize JSON)
+
+server/governance/registry.ts
+
+getPublishedPolicy(scope_type, scope_id)
+
+publishPolicy(scope_type, scope_id, policy_json, actor_id)
+
+listPolicyVersions(...)
+
+server/governance/merge.ts
+
+mergePolicies(global, client, project, artifact) returns effective policy with “most restrictive wins”
+
+server/governance/evaluator.ts
+
+evaluateAction(ctx) returns { allow, reasons[], requiresSupervisor }
+
+ctx includes client_id, project_id, artifact_id, actor_id, actor_type, persona_key, action_type, artifact_classification
+
+server/governance/hash.ts sha256 canonical JSON + log row hashing
+
+2) Enforcement Middleware (Express)
+2.1 Middleware contract
+
+Create middleware:
+server/middleware/enforceGovernance.ts
+
+It should:
+
+Resolve context: client_id, project_id, artifact_id from params/body.
+
+Resolve actor: actor_id from auth; actor_type default HUMAN unless route indicates AI.
+
+Resolve persona: from header x-persona-key OR body personaKey.
+
+Resolve action_type: map route to action type (central map).
+
+Load policies: global + client + project + artifact (published only).
+
+Merge policies → effective.
+
+Evaluate action with evaluator.
+
+Write an ai_actions_log row ALWAYS (ALLOW or DENY) with hashes.
+
+If denied:
+
+return 403 with:
+
+{
+  "error": "GOVERNANCE_DENIED",
+  "actionType": "AI_REWRITE",
+  "requiresSupervisor": true,
+  "reasons": [
+    { "code": "CAPABILITY_DENIED", "message": "AI_EXPORT is disabled at CLIENT scope", "scope": "CLIENT" }
+  ],
+  "nextSteps": ["REQUEST_SUPERVISOR_APPROVAL"]
+}
+
+
+If allowed but requiresSupervisor:
+
+if no supervisor approval token present, return 403 same structure but with code SUPERVISOR_REQUIRED
+
+if approval exists (stub acceptance), proceed.
+
+2.2 Apply middleware to routes
+
+Identify and wrap the routes that invoke AI or access governed artifacts. At minimum:
+
+POST /api/ai/summarize
+
+POST /api/ai/rewrite
+
+POST /api/ai/export
+
+POST /api/artifacts/:id/ai/*
+
+Any route that reads multiple clients/projects in one query.
+
+Example:
+
+app.post("/api/ai/rewrite",
+  requireAuth,
+  enforceGovernance({ actionType: "AI_REWRITE" }),
+  handlerRewrite
+);
+
+
+Also implement a server-side guard for data queries:
+
+When loading artifacts, enforce crossClientAccess=false and crossProjectAccess=false by scoping DB queries by client/project membership.
+
+2.3 Membership validation
+
+Implement server/auth/standing.ts:
+
+ensure user has membership to client/project before governance evaluation.
+
+Governance does not replace access control; it layers on top.
+
+3) UI Gating (React)
+3.1 Effective policy endpoint
+
+Create server route:
+GET /api/governance/effective?clientId=...&projectId=...&artifactId=...&personaKey=...
+
+Returns:
+
+{
+  "effectivePolicy": { ...mergedPolicy },
+  "capabilityMatrix": {
+    "AI_SUMMARIZE": { "allow": true, "requiresSupervisor": false },
+    "AI_REWRITE": { "allow": true, "requiresSupervisor": true },
+    "AI_EXPORT": { "allow": false, "requiresSupervisor": true }
+  }
+}
+
+
+Also return a decisionPreview helper:
+
+POST /api/governance/preview with {clientId, projectId, artifactId, personaKey, actionType} returns allow/deny + reasons (no side effects).
+
+3.2 Frontend governance hook
+
+Implement:
+
+src/governance/useGovernance.ts
+
+accepts {clientId, projectId, artifactId, personaKey}
+
+fetches effective policy
+
+caches per scope (React Query or simple memo)
+
+exposes:
+
+can(actionType): { allow, requiresSupervisor, tooltip }
+
+policy
+
+loading
+
+3.3 Gate the UI
+
+Identify all AI action buttons and gate them:
+
+Summarize button
+
+Rewrite button
+
+Export button
+
+“Generate Letter / Draft Demand” (if exists)
+
+Behavior:
+
+If deny: disable button + show tooltip with first reason message.
+
+If requiresSupervisor: show lock icon + clicking opens “Request Approval” modal (stub ok).
+
+Always pass x-persona-key header with calls.
+
+3.4 Timeline surfacing
+
+Add a Timeline panel entry type “AI Governance Decision” showing:
+
+action type
+
+allow/deny
+
+reasons
+
+timestamp
+
+persona
+
+UI reads from:
+GET /api/ai/actions?clientId=&projectId=&artifactId= returning rows from ai_actions_log.
+
+4) Acceptance tests (must implement)
+4.1 Unit tests (governance)
+
+merging: artifact deny overrides client allow
+
+missing action defaults to deny
+
+aiAllowed=false denies everything
+
+requiresSupervisor true blocks without approval token
+
+4.2 Integration tests (routes)
+
+POST rewrite with allow but requires supervisor returns GOV_DENIED supervisor required
+
+POST export with deny returns GOV_DENIED capability denied
+
+audit log row exists for both allow and deny
+
+5) Seed data
+
+Create a seed script:
+
+Global published policy allowing summarize, requiring supervisor for rewrite, denying export.
+
+Personas: DDIE, VAULT_SUMMARIZER
+
+Example client override: DISPUTED standing denies rewrite + export.
+
+6) Deliverables
+
+When done, output:
+
+Migration files
+
+New governance server modules
+
+Middleware wired to AI routes
+
+Effective policy endpoint
+
+React hook + UI gating on existing buttons
+
+Minimal Approval modal stub (UI only) if no approval backend exists
+
+Tests passing
+
+Do not change unrelated features. Keep the changes minimal, auditable, and production-safe.

@@ -108,7 +108,14 @@ export const activityTypes = [
   "DocumentUploaded",
   "DocumentDeleted",
   "StatusChanged",
-  "EngagementCreated"
+  "EngagementCreated",
+  // Task events
+  "TaskCreated",
+  "TaskCompleted",
+  "TaskDeleted",
+  // AI events
+  "AIAdvisorQuery",
+  "AIGovernanceDecision"
 ] as const;
 export type ActivityType = typeof activityTypes[number];
 
@@ -432,3 +439,104 @@ export const tasks = pgTable("tasks", {
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, completedAt: true });
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type Task = typeof tasks.$inferSelect;
+
+// ==================== AI GOVERNANCE ====================
+
+// Governance policy scope types
+export const governanceScopeTypes = ["GLOBAL", "CLIENT", "PROJECT", "ARTIFACT"] as const;
+export type GovernanceScopeType = typeof governanceScopeTypes[number];
+
+// Governance policy statuses
+export const governancePolicyStatuses = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
+export type GovernancePolicyStatus = typeof governancePolicyStatuses[number];
+
+// Actor types for AI actions
+export const actorTypes = ["HUMAN", "AI", "HYBRID"] as const;
+export type ActorType = typeof actorTypes[number];
+
+// AI action decision types
+export const aiDecisionTypes = ["ALLOW", "DENY"] as const;
+export type AIDecisionType = typeof aiDecisionTypes[number];
+
+// AI action types
+export const aiActionTypes = [
+  "AI_SUMMARIZE",
+  "AI_REWRITE", 
+  "AI_LEGAL_DRAFT",
+  "AI_EXPORT",
+  "AI_ANALYZE",
+  "AI_ADVISOR"
+] as const;
+export type AIActionType = typeof aiActionTypes[number];
+
+// Governance policies table
+export const governancePolicies = pgTable("governance_policies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scopeType: text("scope_type").notNull(), // GLOBAL, CLIENT, PROJECT, ARTIFACT
+  scopeId: varchar("scope_id"), // null only for GLOBAL
+  version: integer("version").notNull().default(1),
+  status: text("status").notNull().default("DRAFT"), // DRAFT, PUBLISHED, ARCHIVED
+  policyJson: text("policy_json").notNull(), // JSON stringified policy object
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  publishedAt: timestamp("published_at"),
+  hash: text("hash").notNull(), // sha256 hash of canonical JSON for audit
+});
+
+export const insertGovernancePolicySchema = createInsertSchema(governancePolicies).omit({ id: true, createdAt: true });
+export type InsertGovernancePolicy = z.infer<typeof insertGovernancePolicySchema>;
+export type GovernancePolicy = typeof governancePolicies.$inferSelect;
+
+// AI Personas table
+export const aiPersonas = pgTable("ai_personas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: text("key").notNull().unique(), // e.g., DDIE, VAULT_SUMMARIZER
+  name: text("name").notNull(),
+  description: text("description"),
+  capabilities: text("capabilities"), // JSON stringified capability set
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAIPersonaSchema = createInsertSchema(aiPersonas).omit({ id: true, createdAt: true });
+export type InsertAIPersona = z.infer<typeof insertAIPersonaSchema>;
+export type AIPersona = typeof aiPersonas.$inferSelect;
+
+// AI Actions Log table (append-only audit trail)
+export const aiActionsLog = pgTable("ai_actions_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id"), // party ID acting as client
+  projectId: varchar("project_id"), // engagement ID acting as project
+  artifactId: varchar("artifact_id"), // document ID
+  actorType: text("actor_type").notNull(), // HUMAN, AI, HYBRID
+  actorId: varchar("actor_id").references(() => users.id, { onDelete: "set null" }),
+  personaId: varchar("persona_id").references(() => aiPersonas.id, { onDelete: "set null" }),
+  actionType: text("action_type").notNull(), // AI_SUMMARIZE, AI_REWRITE, etc.
+  requestContext: text("request_context"), // JSON stringified context
+  decision: text("decision").notNull(), // ALLOW, DENY
+  reasons: text("reasons"), // JSON stringified reasons array
+  requiresSupervisor: boolean("requires_supervisor").notNull().default(false),
+  supervisorActorId: varchar("supervisor_actor_id").references(() => users.id, { onDelete: "set null" }),
+  supervisorDecisionId: varchar("supervisor_decision_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  hash: text("hash").notNull(), // sha256 over canonical log row
+});
+
+export const insertAIActionsLogSchema = createInsertSchema(aiActionsLog).omit({ id: true, createdAt: true });
+export type InsertAIActionsLog = z.infer<typeof insertAIActionsLogSchema>;
+export type AIActionsLog = typeof aiActionsLog.$inferSelect;
+
+// Governance approvals table
+export const governanceApprovals = pgTable("governance_approvals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  aiActionsLogId: varchar("ai_actions_log_id").references(() => aiActionsLog.id, { onDelete: "cascade" }),
+  requestedBy: varchar("requested_by").references(() => users.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("PENDING"), // PENDING, APPROVED, REJECTED
+  reviewedBy: varchar("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertGovernanceApprovalSchema = createInsertSchema(governanceApprovals).omit({ id: true, createdAt: true });
+export type InsertGovernanceApproval = z.infer<typeof insertGovernanceApprovalSchema>;
+export type GovernanceApproval = typeof governanceApprovals.$inferSelect;
