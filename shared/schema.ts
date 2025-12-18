@@ -246,3 +246,130 @@ export const addresses = pgTable("addresses", {
 export const insertAddressSchema = createInsertSchema(addresses).omit({ id: true });
 export type InsertAddress = z.infer<typeof insertAddressSchema>;
 export type Address = typeof addresses.$inferSelect;
+
+// ==================== ENGAGEMENT SYSTEM ====================
+
+// Engagement status enum
+export const engagementStatuses = [
+  "Active",
+  "OnHold",
+  "Closed",
+  "Archived"
+] as const;
+export type EngagementStatus = typeof engagementStatuses[number];
+
+// Engagement types
+export const engagementTypes = [
+  "Contract",
+  "Loan",
+  "JointVenture",
+  "VendorAgreement",
+  "Dispute",
+  "Collection",
+  "Litigation",
+  "Advisory",
+  "Other"
+] as const;
+export type EngagementType = typeof engagementTypes[number];
+
+// Engagements table - top-level workspace/matter/project
+export const engagements = pgTable("engagements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: text("type").notNull().default("Contract"), // Contract, Loan, JV, Dispute, Collection, etc.
+  status: text("status").notNull().default("Active"), // Active, OnHold, Closed, Archived
+  referenceNumber: text("reference_number"), // Internal reference/matter number
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdBy: varchar("created_by").references(() => users.id),
+});
+
+export const insertEngagementSchema = createInsertSchema(engagements).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEngagement = z.infer<typeof insertEngagementSchema>;
+export type Engagement = typeof engagements.$inferSelect;
+
+// Engagement membership roles
+export const engagementRoles = [
+  "owner",           // Full control, can delete engagement
+  "internal_admin",  // Full access except delete engagement
+  "internal_user",   // View all, edit timeline/docs, no admin
+  "external_partner", // Limited view - only sees what's shared
+  "viewer",          // Read-only access
+  "auditor"          // Read-only + export access
+] as const;
+export type EngagementRole = typeof engagementRoles[number];
+
+// Engagement permissions (granular access control)
+export const engagementPermissions = [
+  "view_timeline",
+  "edit_timeline",
+  "upload_documents",
+  "delete_documents",
+  "view_financial_terms",
+  "edit_financial_terms",
+  "manage_members",
+  "create_tasks",
+  "export_evidence",
+  "view_internal_notes"
+] as const;
+export type EngagementPermission = typeof engagementPermissions[number];
+
+// Engagement memberships - who has access to each engagement
+export const engagementMemberships = pgTable("engagement_memberships", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  engagementId: varchar("engagement_id").notNull().references(() => engagements.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("viewer"), // owner, internal_admin, internal_user, external_partner, viewer, auditor
+  permissions: text("permissions").array(), // Override permissions (if null, use role defaults)
+  invitedBy: varchar("invited_by").references(() => users.id),
+  invitedAt: timestamp("invited_at").notNull().defaultNow(),
+  acceptedAt: timestamp("accepted_at"),
+});
+
+export const insertEngagementMembershipSchema = createInsertSchema(engagementMemberships).omit({ id: true, invitedAt: true, acceptedAt: true });
+export type InsertEngagementMembership = z.infer<typeof insertEngagementMembershipSchema>;
+export type EngagementMembership = typeof engagementMemberships.$inferSelect;
+
+// Link parties to engagements (many-to-many)
+export const engagementParties = pgTable("engagement_parties", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  engagementId: varchar("engagement_id").notNull().references(() => engagements.id, { onDelete: "cascade" }),
+  partyId: varchar("party_id").notNull().references(() => parties.id, { onDelete: "cascade" }),
+  roleInEngagement: text("role_in_engagement"), // Counterparty, Guarantor, Counsel, etc.
+  addedAt: timestamp("added_at").notNull().defaultNow(),
+});
+
+export const insertEngagementPartySchema = createInsertSchema(engagementParties).omit({ id: true, addedAt: true });
+export type InsertEngagementParty = z.infer<typeof insertEngagementPartySchema>;
+export type EngagementParty = typeof engagementParties.$inferSelect;
+
+// Link agreements to engagements (many-to-many)
+export const engagementAgreements = pgTable("engagement_agreements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  engagementId: varchar("engagement_id").notNull().references(() => engagements.id, { onDelete: "cascade" }),
+  agreementId: varchar("agreement_id").notNull().references(() => agreements.id, { onDelete: "cascade" }),
+  isPrimary: boolean("is_primary").notNull().default(false), // Is this the main agreement for this engagement?
+  addedAt: timestamp("added_at").notNull().defaultNow(),
+});
+
+export const insertEngagementAgreementSchema = createInsertSchema(engagementAgreements).omit({ id: true, addedAt: true });
+export type InsertEngagementAgreement = z.infer<typeof insertEngagementAgreementSchema>;
+export type EngagementAgreement = typeof engagementAgreements.$inferSelect;
+
+// Audit log for tracking important actions
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  action: text("action").notNull(), // create, update, delete, export, invite, etc.
+  entityType: text("entity_type").notNull(), // engagement, document, membership, etc.
+  entityId: varchar("entity_id"),
+  engagementId: varchar("engagement_id").references(() => engagements.id, { onDelete: "set null" }),
+  metadata: text("metadata"), // JSON string with additional context
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;
