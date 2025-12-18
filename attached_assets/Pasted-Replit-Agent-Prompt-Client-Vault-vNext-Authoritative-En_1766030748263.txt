@@ -1,0 +1,340 @@
+Replit Agent Prompt: “Client Vault vNext — Authoritative Engagement + Contract Command Center”
+
+You are my senior full-stack engineer. You will enhance Work Digital Client Vault (React 18 + TS + Vite + Wouter + TanStack Query + Tailwind + Radix/shadcn) with an authoritative engagement tracking system and partner portal. 
+
+replit (4)
+
+
+Backend is Express + TS + Drizzle + Neon Postgres, with session auth and file uploads (S3 supported). 
+
+replit (4)
+
+ 
+
+replit (4)
+
+North Star Outcome
+
+Build a system of record for every agreement + every communication:
+
+Every call, email, text/SMS, WhatsApp message, file, note, transcript, and recording is captured on a timeline and is searchable.
+
+The system supports selective sharing: I can invite external parties/partners who can only see the engagements they are assigned to (no cross-project visibility).
+
+When needed, we can generate enforcement-ready exports (chronology + evidence package) to pursue non-performing parties.
+
+A) Core Enhancements (Laundry List)
+1) Multi-tenant “Engagement Workspace” model (authoritative scoping)
+
+Implement a new top-level object: Engagement (aka “Workspace / Matter / Project”):
+
+Engagements can include: contracts, loans, JVs, vendor agreements, disputes, collections.
+
+Engagement binds together: Parties, Persons, Agreements, Documents, Activities, Evidence, Tasks, Messages, Calls, and Exports.
+
+Update existing flows so “Agreement lifecycle Kanban” and “Enforcement pipeline” can operate within an Engagement (still allow global views). 
+
+replit (4)
+
+2) Strong access control (partner portal)
+
+Implement RBAC beyond Admin/User:
+
+Roles: owner, internal_admin, internal_user, external_partner, viewer, auditor
+
+Create EngagementMemberships so visibility is engagement-scoped:
+
+External partners can only see Engagements where they’re a member.
+
+Fine-grained permissions per engagement: view timeline, upload docs, comment, create tasks, view financial terms, export evidence, etc.
+
+Keep session auth, but harden route-level enforcement across all /api/* resources. 
+
+replit (4)
+
+3) Timeline 2.0 (single unified chronological spine)
+
+Replace “activities only” with a unified “TimelineEvent” model:
+Event types:
+
+note, call, meeting, email, sms, whatsapp, file_upload, signature_event, invoice, payment, deadline, dunning_notice, breach_notice, suit_filed, judgment, status_change, ai_recommendation
+Each event has:
+
+occurredAt (when it happened) vs capturedAt (when entered)
+
+source (manual, Twilio, WhatsApp provider, email ingest, upload, AI parse)
+
+visibility (internal-only vs shared-with-external)
+
+attachments (documents, call recordings, transcripts)
+
+Borrow DDIE’s Evidence Intake concept: store both eventDate vs collectedAt and keep an audit trail. 
+
+replit (3)
+
+4) Communications ingestion (no more manual retyping)
+
+Implement connectors (start with manual upload + webhook-ready):
+
+Email ingest (forward-to address) → parse → timeline events
+
+SMS + call logs via Twilio (or pluggable provider)
+
+WhatsApp via Twilio or Meta Cloud API (store message thread + attachments)
+
+Call recording + transcription pipeline:
+
+store recording in S3
+
+transcription job (provider-agnostic interface)
+
+transcript stored and indexed for search
+Even if we don’t fully ship all providers now, implement the interfaces + tables + stubs so adding providers is straightforward.
+
+5) Document Vault hardening (versioned, evidence-grade)
+
+Client Vault already has document management and S3 support. Extend it into “Document Vault” style storage like DDIE. 
+
+replit (3)
+
+ 
+
+replit (4)
+
+
+Requirements:
+
+Versioning: new upload creates new version (never overwrite)
+
+Hashing: SHA-256 hash per version
+
+Immutable “evidence lock” option: lock a doc version from edits/deletes
+
+Link docs to: Engagement, Party, Agreement, TimelineEvent
+
+Expiration tracking remains (but add “legal hold” override). 
+
+replit (4)
+
+6) Contract Scanner for onboarding (fast intake)
+
+Port the DDIE Contract Scanner idea into Client Vault:
+
+Upload contract → extract parties + key dates + terms → auto-create:
+
+Engagement
+
+Parties + Persons (as needed)
+
+Agreement record with key metadata
+
+Timeline event: “Contract Ingested”
+DDIE’s scanner flow and extracted fields are the baseline. 
+
+replit (3)
+
+7) Enforcement-ready “Collections & Litigation Prep” pack
+
+Client Vault already tracks enforcement stages (Dunning → Suit Filed → Judgment). Extend it into a one-click export: 
+
+replit (4)
+
+Generate a PDF/ZIP “Evidence Binder” containing:
+
+Case chronology (timeline printout)
+
+All notices sent (dunning, breach, demand)
+
+Contract(s)
+
+Payment ledger / maturity / missed milestones
+
+Communication transcripts + call logs + message threads
+
+Document index with hashes
+
+Export formats: PDF + CSV (timeline) + ZIP of attachments
+
+8) Search that actually works (global + engagement scoped)
+
+Client Vault already has “Global search across parties, agreements, documents, and activities.” Upgrade it: 
+
+replit (4)
+
+PostgreSQL full-text search (FTS) across:
+
+timeline events (notes, transcripts, messages)
+
+documents (metadata + extracted text)
+
+parties/persons/agreements
+
+Search modes:
+
+“This engagement only”
+
+“All engagements I have access to”
+
+Add filters: date range, event type, participant, party, agreement, “has attachment”, “shared externally”.
+
+9) “Priority Follow-Up” system (your personal command prompt)
+
+Add:
+
+Tasks + Reminders tied to Engagement and Agreement
+
+“Stale engagement” detection (no events in X days)
+
+“Critical dates” detection (maturity date, cure deadlines, notice windows)
+
+Dashboard widgets: “Top 10 engagements needing push this week”
+
+10) Business AI Guidance Tool (on-demand strategist)
+
+Implement an “AI Advisor” tab per Engagement:
+
+Input: the engagement’s timeline + docs + agreement terms + current status
+
+Output (on request):
+
+Recommended next milestones
+
+Risks / missing artifacts (e.g., “no written notice logged”)
+
+Draft action plan (internal)
+
+Optional: draft partner update summary (external-safe)
+Store AI outputs as timeline events with type ai_recommendation, including:
+
+prompt used, model, timestamp, and citations to internal records referenced
+Keep it request-driven (no autonomous actions).
+
+B) Database + API Deliverables
+New/extended tables (Drizzle)
+
+Create/extend:
+
+engagements
+
+engagement_memberships
+
+timeline_events
+
+timeline_event_participants (party/person/user joins)
+
+communication_threads (sms/whatsapp/email threads)
+
+messages (individual message items)
+
+calls (call logs + recordings + transcript refs)
+
+document_versions (versioning + hash + lock state)
+
+evidence_items (structured evidence intake, if separate from timeline events)
+
+tasks + task_comments
+
+exports (evidence binder job records)
+
+APIs (Express REST)
+
+Add endpoints:
+
+CRUD engagements + membership invites
+
+timeline ingest + attach docs
+
+message/call import webhooks (stubbed, provider-agnostic)
+
+contract scan endpoint similar to DDIE (POST /api/scan-contract) 
+
+replit (3)
+
+export generator endpoint (POST /api/engagements/:id/export-binder)
+
+C) UI/UX Deliverables (React)
+Navigation
+
+Add left-nav sections:
+
+Engagements
+
+Timeline
+
+Documents (Vault)
+
+Agreements (Kanban)
+
+Enforcement
+
+Search
+
+Tasks
+
+AI Advisor
+
+Engagement page
+
+Tabs:
+
+Overview (status, parties, key dates)
+
+Timeline (unified)
+
+Agreements
+
+Documents
+
+Enforcement
+
+Tasks
+
+AI Advisor
+
+Access (members)
+
+External partner portal mode
+
+When role is external:
+
+default landing: “My Engagements”
+
+hidden: admin/users management
+
+only show allowed items per membership permissions
+
+D) Security / Integrity Requirements
+
+Every timeline event and document version records:
+
+who created it, when, source, and immutable ID
+
+Add file validation + size limits (currently noted as needed). 
+
+replit (4)
+
+Add audit log table: audit_log for key actions (membership changes, deletes, exports)
+
+E) Implementation Plan (Step-by-step)
+
+Add schema + migrations
+
+Enforce engagement-scoped authorization middleware
+
+Build Engagement list + detail shell
+
+Implement TimelineEvent + UI
+
+Document Vault versioning + S3 integration
+
+Contract Scanner intake flow
+
+Tasks + Priority Dashboard
+
+Exports (binder generator)
+
+AI Advisor (request-driven) + stored recommendations
+
+Webhook stubs for Twilio/WhatsApp/email ingest (interfaces + placeholders)
+
+Deliver working incremental PR-quality commits, with test data seeders.
