@@ -50,6 +50,7 @@ export interface IStorage {
   // Activities
   getAllActivities(): Promise<Activity[]>;
   getActivitiesByAgreement(agreementId: string): Promise<Activity[]>;
+  getActivitiesByEngagement(engagementId: string, filters?: { type?: string; startDate?: string; endDate?: string }): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   deleteActivity(id: string): Promise<void>;
 
@@ -214,6 +215,29 @@ export class DbStorage implements IStorage {
 
   async getActivitiesByAgreement(agreementId: string): Promise<Activity[]> {
     return await db.select().from(activities).where(eq(activities.agreementId, agreementId));
+  }
+
+  async getActivitiesByEngagement(engagementId: string, filters?: { type?: string; startDate?: string; endDate?: string }): Promise<Activity[]> {
+    const conditions = [eq(activities.engagementId, engagementId)];
+    
+    // Note: Type and date filtering would require additional SQL conditions
+    // For now, we'll filter in-memory for simplicity
+    const results = await db.select().from(activities)
+      .where(eq(activities.engagementId, engagementId))
+      .orderBy(desc(activities.date));
+    
+    let filtered = results;
+    if (filters?.type) {
+      filtered = filtered.filter(a => a.type === filters.type);
+    }
+    if (filters?.startDate) {
+      filtered = filtered.filter(a => a.date >= filters.startDate!);
+    }
+    if (filters?.endDate) {
+      filtered = filtered.filter(a => a.date <= filters.endDate!);
+    }
+    
+    return filtered;
   }
 
   async createActivity(activity: InsertActivity): Promise<Activity> {
