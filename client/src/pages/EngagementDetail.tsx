@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth";
 import { uploadEngagementDocument, deleteEngagementDocument, getDocumentDownloadUrl, fetchDocumentVersions, uploadDocumentVersion } from "@/lib/api";
+import { useGovernance } from "@/governance/useGovernance";
 import type { Engagement, Party, Agreement, User, Activity, activityTypes, Document, Task } from "@shared/schema";
 import { documentCategories, taskPriorities, taskStatuses } from "@shared/schema";
 
@@ -153,6 +154,16 @@ export default function EngagementDetail() {
     },
     enabled: !!id
   });
+
+  // AI Governance hook - checks what AI actions are allowed
+  const { can: canAI, loading: governanceLoading } = useGovernance({
+    projectId: id,
+    enabled: !!id
+  });
+  
+  const aiAdvisorPermission = canAI("AI_ADVISOR");
+  const aiSummarizePermission = canAI("AI_SUMMARIZE");
+  const aiExportPermission = canAI("AI_EXPORT");
 
   const { data: members = [] } = useQuery<any[]>({
     queryKey: ["/api/engagements", id, "members"],
@@ -1552,61 +1563,76 @@ export default function EngagementDetail() {
               <CardTitle className="flex items-center gap-2">
                 <Bot className="h-5 w-5" />
                 AI Advisor
+                {aiAdvisorPermission.requiresSupervisor && (
+                  <Badge variant="outline" className="text-xs">
+                    <Shield className="h-3 w-3 mr-1" />
+                    Requires Approval
+                  </Badge>
+                )}
               </CardTitle>
               <CardDescription>
                 Ask questions about this engagement. The AI has context about parties, agreements, documents, tasks, and recent activity.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {aiHistory.length > 0 && (
-                  <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4 bg-muted/30">
-                    {aiHistory.map((item, i) => (
-                      <div key={i} className="space-y-2">
-                        <div className="flex items-start gap-2">
-                          <div className="bg-primary text-primary-foreground rounded-full p-1.5 shrink-0">
-                            <Users className="h-3 w-3" />
+              {!aiAdvisorPermission.allow && !governanceLoading ? (
+                <div className="text-center py-8">
+                  <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground mb-2">AI Advisor is not available</p>
+                  <p className="text-sm text-muted-foreground">{aiAdvisorPermission.tooltip}</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {aiHistory.length > 0 && (
+                    <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4 bg-muted/30">
+                      {aiHistory.map((item, i) => (
+                        <div key={i} className="space-y-2">
+                          <div className="flex items-start gap-2">
+                            <div className="bg-primary text-primary-foreground rounded-full p-1.5 shrink-0">
+                              <Users className="h-3 w-3" />
+                            </div>
+                            <p className="text-sm font-medium">{item.question}</p>
                           </div>
-                          <p className="text-sm font-medium">{item.question}</p>
-                        </div>
-                        <div className="flex items-start gap-2 ml-6">
-                          <div className="bg-secondary rounded-full p-1.5 shrink-0">
-                            <Bot className="h-3 w-3" />
+                          <div className="flex items-start gap-2 ml-6">
+                            <div className="bg-secondary rounded-full p-1.5 shrink-0">
+                              <Bot className="h-3 w-3" />
+                            </div>
+                            <div className="text-sm prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: item.answer.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                           </div>
-                          <div className="text-sm prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: item.answer.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Ask about risks, deadlines, next steps, or get recommendations..."
+                      value={aiQuestion}
+                      onChange={(e) => setAiQuestion(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && aiAdvisorPermission.allow && handleAskAi()}
+                      disabled={isAiLoading || !aiAdvisorPermission.allow}
+                      data-testid="input-ai-question"
+                      className="flex-1"
+                    />
+                    <Button 
+                      onClick={handleAskAi} 
+                      disabled={!aiQuestion.trim() || isAiLoading || !aiAdvisorPermission.allow}
+                      title={aiAdvisorPermission.tooltip}
+                      data-testid="button-ask-ai"
+                    >
+                      {isAiLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                    </Button>
                   </div>
-                )}
-                
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Ask about risks, deadlines, next steps, or get recommendations..."
-                    value={aiQuestion}
-                    onChange={(e) => setAiQuestion(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleAskAi()}
-                    disabled={isAiLoading}
-                    data-testid="input-ai-question"
-                    className="flex-1"
-                  />
-                  <Button 
-                    onClick={handleAskAi} 
-                    disabled={!aiQuestion.trim() || isAiLoading}
-                    data-testid="button-ask-ai"
-                  >
-                    {isAiLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                  </Button>
+                  
+                  <div className="text-xs text-muted-foreground">
+                    Example questions: "What are the key risks?", "Summarize recent activity", "What tasks are overdue?", "Recommend next steps"
+                  </div>
                 </div>
-                
-                <div className="text-xs text-muted-foreground">
-                  Example questions: "What are the key risks?", "Summarize recent activity", "What tasks are overdue?", "Recommend next steps"
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
