@@ -964,6 +964,17 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         metadata: JSON.stringify({ name: engagement.name })
       });
 
+      // Auto-create timeline entry for engagement creation
+      const creatorUser = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId: engagement.id,
+        type: "EngagementCreated",
+        content: `Engagement "${engagement.name}" was created`,
+        date: new Date().toISOString().split('T')[0],
+        user: creatorUser?.name || "System",
+        userId: req.session.userId
+      });
+
       res.json(engagement);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -985,6 +996,9 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         return res.status(403).json({ error: "Insufficient permissions to update engagement" });
       }
 
+      // Get old engagement to detect status change
+      const oldEngagement = await storage.getEngagement(req.params.id);
+      
       const engagement = await storage.updateEngagement(req.params.id, req.body);
       if (!engagement) {
         return res.status(404).json({ error: "Engagement not found" });
@@ -998,6 +1012,19 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         engagementId: engagement.id,
         metadata: JSON.stringify(req.body)
       });
+
+      // Auto-create timeline entry for status change
+      if (oldEngagement && req.body.status && oldEngagement.status !== req.body.status) {
+        const actingUser = await storage.getUser(req.session.userId!);
+        await storage.createActivity({
+          engagementId: engagement.id,
+          type: "StatusChanged",
+          content: `Status changed from "${oldEngagement.status}" to "${req.body.status}"`,
+          date: new Date().toISOString().split('T')[0],
+          user: actingUser?.name || "System",
+          userId: req.session.userId
+        });
+      }
 
       res.json(engagement);
     } catch (error: any) {
@@ -1108,6 +1135,7 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
 
       const membership = await storage.createEngagementMembership(membershipData);
 
+      // Audit log
       await storage.createAuditLog({
         userId: req.session.userId,
         action: "invite",
@@ -1115,6 +1143,18 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         entityId: membership.id,
         engagementId: req.params.id,
         metadata: JSON.stringify({ invitedUserId: membershipData.userId, role: membershipData.role })
+      });
+
+      // Auto-create timeline entry
+      const invitedUser = await storage.getUser(membershipData.userId);
+      const actingUser = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId: req.params.id,
+        type: "MemberAdded",
+        content: `${invitedUser?.name || "User"} was added as ${membershipData.role}`,
+        date: new Date().toISOString().split('T')[0],
+        user: actingUser?.name || "System",
+        userId: req.session.userId
       });
 
       res.json(membership);
@@ -1155,6 +1195,11 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
+      // Get member info before deletion for timeline
+      const memberships = await storage.getEngagementMemberships(req.params.engagementId);
+      const membership = memberships.find((m: any) => m.id === req.params.membershipId);
+      const removedUser = membership ? await storage.getUser(membership.userId) : null;
+
       await storage.createAuditLog({
         userId: req.session.userId,
         action: "remove_member",
@@ -1164,6 +1209,18 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
       });
 
       await storage.deleteEngagementMembership(req.params.membershipId);
+
+      // Auto-create timeline entry
+      const actingUser = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId: req.params.engagementId,
+        type: "MemberRemoved",
+        content: `${removedUser?.name || "User"} was removed from the engagement`,
+        date: new Date().toISOString().split('T')[0],
+        user: actingUser?.name || "System",
+        userId: req.session.userId
+      });
+
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -1210,6 +1267,19 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         engagementId: req.params.id
       });
       const link = await storage.addPartyToEngagement(data);
+
+      // Auto-create timeline entry
+      const party = await storage.getParty(data.partyId);
+      const actingUser = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId: req.params.id,
+        type: "PartyLinked",
+        content: `Party "${party?.name || "Unknown"}" was linked to the engagement${data.roleInEngagement ? ` as ${data.roleInEngagement}` : ""}`,
+        date: new Date().toISOString().split('T')[0],
+        user: actingUser?.name || "System",
+        userId: req.session.userId
+      });
+
       res.json(link);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -1230,7 +1300,24 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
+      // Get party info before deletion for timeline
+      const engagementParties = await storage.getEngagementParties(req.params.engagementId);
+      const partyLink = engagementParties.find((ep: any) => ep.id === req.params.linkId);
+      const party = partyLink ? await storage.getParty(partyLink.partyId) : null;
+
       await storage.removePartyFromEngagement(req.params.linkId);
+
+      // Auto-create timeline entry
+      const actingUser = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId: req.params.engagementId,
+        type: "PartyUnlinked",
+        content: `Party "${party?.name || "Unknown"}" was removed from the engagement`,
+        date: new Date().toISOString().split('T')[0],
+        user: actingUser?.name || "System",
+        userId: req.session.userId
+      });
+
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -1277,6 +1364,19 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         engagementId: req.params.id
       });
       const link = await storage.addAgreementToEngagement(data);
+
+      // Auto-create timeline entry
+      const agreement = await storage.getAgreement(data.agreementId);
+      const actingUser = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId: req.params.id,
+        type: "AgreementLinked",
+        content: `Agreement "${agreement?.title || "Unknown"}" was linked to the engagement`,
+        date: new Date().toISOString().split('T')[0],
+        user: actingUser?.name || "System",
+        userId: req.session.userId
+      });
+
       res.json(link);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -1297,7 +1397,24 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
+      // Get agreement info before deletion for timeline
+      const engagementAgreements = await storage.getEngagementAgreements(req.params.engagementId);
+      const agreementLink = engagementAgreements.find((ea: any) => ea.id === req.params.linkId);
+      const agreement = agreementLink ? await storage.getAgreement(agreementLink.agreementId) : null;
+
       await storage.removeAgreementFromEngagement(req.params.linkId);
+
+      // Auto-create timeline entry
+      const actingUser = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId: req.params.engagementId,
+        type: "AgreementUnlinked",
+        content: `Agreement "${agreement?.title || "Unknown"}" was removed from the engagement`,
+        date: new Date().toISOString().split('T')[0],
+        user: actingUser?.name || "System",
+        userId: req.session.userId
+      });
+
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
