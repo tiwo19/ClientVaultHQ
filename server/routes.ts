@@ -1357,9 +1357,9 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         userId: req.session.userId!,
         engagementId: req.params.id,
         action: "timeline_entry_added",
-        resource: "activity",
-        resourceId: activity.id,
-        details: { type: activity.type, content: activity.content.substring(0, 100) },
+        entityType: "activity",
+        entityId: activity.id,
+        metadata: JSON.stringify({ type: activity.type, content: activity.content.substring(0, 100) }),
       });
 
       res.json(activity);
@@ -1389,9 +1389,8 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         userId: req.session.userId!,
         engagementId: req.params.engagementId,
         action: "timeline_entry_deleted",
-        resource: "activity",
-        resourceId: req.params.activityId,
-        details: {},
+        entityType: "activity",
+        entityId: req.params.activityId,
       });
 
       res.json({ success: true });

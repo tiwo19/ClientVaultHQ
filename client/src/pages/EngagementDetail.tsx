@@ -10,12 +10,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield } from "lucide-react";
+import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth";
-import type { Engagement, Party, Agreement, User } from "@shared/schema";
+import type { Engagement, Party, Agreement, User, Activity, activityTypes } from "@shared/schema";
+
+const userActivityTypes = ["Call", "Email", "LetterSent", "InternalNote", "Meeting", "CourtFiling"] as const;
 
 const engagementTypes = ["Contract", "Loan", "JointVenture", "VendorAgreement", "Dispute", "Collection", "Litigation", "Advisory", "Other"] as const;
 const engagementStatuses = ["Active", "OnHold", "Closed", "Archived"] as const;
@@ -58,6 +60,12 @@ export default function EngagementDetail() {
   const [newPartyId, setNewPartyId] = useState("");
   const [newPartyRole, setNewPartyRole] = useState("");
   const [newAgreementId, setNewAgreementId] = useState("");
+
+  // Timeline state
+  const [isAddActivityOpen, setIsAddActivityOpen] = useState(false);
+  const [newActivityType, setNewActivityType] = useState<string>("InternalNote");
+  const [newActivityContent, setNewActivityContent] = useState("");
+  const [timelineTypeFilter, setTimelineTypeFilter] = useState<string>("all");
 
   const { data: engagement, isLoading } = useQuery<Engagement>({
     queryKey: ["/api/engagements", id],
@@ -125,6 +133,17 @@ export default function EngagementDetail() {
       if (!res.ok) return [];
       return res.json();
     }
+  });
+
+  // Timeline query
+  const { data: timeline = [] } = useQuery<Activity[]>({
+    queryKey: ["/api/engagements", id, "timeline"],
+    queryFn: async () => {
+      const res = await fetch(`/api/engagements/${id}/timeline`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!id
   });
 
   const updateMutation = useMutation({
@@ -258,6 +277,45 @@ export default function EngagementDetail() {
     }
   });
 
+  // Timeline mutations
+  const addActivityMutation = useMutation({
+    mutationFn: async (data: { type: string; content: string }) => {
+      const res = await fetch(`/api/engagements/${id}/timeline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) throw new Error("Failed to add activity");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "timeline"] });
+      setIsAddActivityOpen(false);
+      setNewActivityType("InternalNote");
+      setNewActivityContent("");
+      toast({ title: "Activity Added" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const deleteActivityMutation = useMutation({
+    mutationFn: async (activityId: string) => {
+      const res = await fetch(`/api/engagements/${id}/timeline/${activityId}`, {
+        method: "DELETE",
+        credentials: "include"
+      });
+      if (!res.ok) throw new Error("Failed to delete activity");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "timeline"] });
+      toast({ title: "Activity Removed" });
+    }
+  });
+
   const startEditing = () => {
     if (engagement) {
       setEditName(engagement.name);
@@ -306,10 +364,18 @@ export default function EngagementDetail() {
   const canEdit = myRole === "owner" || myRole === "internal_admin";
   const canManageMembers = myRole === "owner" || myRole === "internal_admin";
   const canLinkEntities = ["owner", "internal_admin", "internal_user"].includes(myRole || "");
+  const canEditTimeline = ["owner", "internal_admin", "internal_user"].includes(myRole || "");
+  const canDeleteActivity = myRole === "owner" || myRole === "internal_admin";
 
   // Derived lists for available items (server-side filtered for users)
   const existingPartyIds = engagementParties.map((ep: any) => ep.partyId);
   const availablePartyList = allParties.filter((p: Party) => !existingPartyIds.includes(p.id));
+
+  // Filtered timeline
+  const filteredTimeline = useMemo(() => {
+    if (timelineTypeFilter === "all") return timeline;
+    return timeline.filter(a => a.type === timelineTypeFilter);
+  }, [timeline, timelineTypeFilter]);
   const existingAgreementIds = engagementAgreements.map((ea: any) => ea.agreementId);
   const availableAgreementList = allAgreements.filter((a: Agreement) => !existingAgreementIds.includes(a.id));
 
@@ -365,6 +431,10 @@ export default function EngagementDetail() {
           <TabsTrigger value="agreements" data-testid="tab-agreements">
             <FileText className="mr-2 h-4 w-4" />
             Agreements ({engagementAgreements.length})
+          </TabsTrigger>
+          <TabsTrigger value="timeline" data-testid="tab-timeline">
+            <Clock className="mr-2 h-4 w-4" />
+            Timeline ({timeline.length})
           </TabsTrigger>
         </TabsList>
 
@@ -747,6 +817,122 @@ export default function EngagementDetail() {
                     ))}
                   </TableBody>
                 </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="timeline">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Engagement Timeline</CardTitle>
+                <CardDescription>Activity history and communications log</CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={timelineTypeFilter} onValueChange={setTimelineTypeFilter}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="Filter by type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Activities</SelectItem>
+                    {userActivityTypes.map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {canEditTimeline && (
+                  <Dialog open={isAddActivityOpen} onOpenChange={setIsAddActivityOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" data-testid="button-add-activity">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Activity
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Add Timeline Entry</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>Activity Type</Label>
+                          <Select value={newActivityType} onValueChange={setNewActivityType}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {userActivityTypes.map(t => (
+                                <SelectItem key={t} value={t}>{t}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Content</Label>
+                          <Textarea 
+                            value={newActivityContent} 
+                            onChange={e => setNewActivityContent(e.target.value)}
+                            placeholder="Describe the activity..."
+                            rows={4}
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button
+                          onClick={() => addActivityMutation.mutate({ type: newActivityType, content: newActivityContent })}
+                          disabled={!newActivityContent.trim() || addActivityMutation.isPending}
+                        >
+                          Add Activity
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {filteredTimeline.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">No timeline entries yet</p>
+              ) : (
+                <div className="space-y-4">
+                  {filteredTimeline.map((activity: Activity) => (
+                    <div key={activity.id} className="flex gap-4 border-l-2 border-muted pl-4 pb-4" data-testid={`timeline-entry-${activity.id}`}>
+                      <div className="flex-shrink-0 mt-1">
+                        {activity.type === "Call" && <Phone className="h-4 w-4 text-blue-500" />}
+                        {activity.type === "Email" && <Mail className="h-4 w-4 text-green-500" />}
+                        {activity.type === "Meeting" && <Users className="h-4 w-4 text-purple-500" />}
+                        {activity.type === "InternalNote" && <MessageSquare className="h-4 w-4 text-gray-500" />}
+                        {activity.type === "LetterSent" && <FileText className="h-4 w-4 text-orange-500" />}
+                        {activity.type === "CourtFiling" && <FileUp className="h-4 w-4 text-red-500" />}
+                        {activity.type?.startsWith("Member") && <Users className="h-4 w-4 text-blue-400" />}
+                        {activity.type?.includes("Linked") && <Building2 className="h-4 w-4 text-teal-500" />}
+                        {activity.type?.includes("Unlinked") && <AlertCircle className="h-4 w-4 text-yellow-500" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline" className="text-xs">{activity.type}</Badge>
+                            <span className="text-xs text-muted-foreground">{activity.date}</span>
+                            <span className="text-xs text-muted-foreground">by {activity.user}</span>
+                          </div>
+                          {canDeleteActivity && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => {
+                                if (confirm("Delete this timeline entry?")) {
+                                  deleteActivityMutation.mutate(activity.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                        <p className="text-sm mt-1 whitespace-pre-wrap">{activity.content}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
