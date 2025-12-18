@@ -579,7 +579,7 @@ export async function registerRoutes(
         engagementId,
         type: "DocumentLinked",
         date: new Date().toISOString(),
-        summary: `Document "${document.name}" linked to engagement`,
+        content: `Document "${document.name}" linked to engagement`,
         user: user?.name || "System"
       });
       

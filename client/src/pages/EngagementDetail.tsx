@@ -10,13 +10,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File, History, CheckSquare, Circle, CheckCircle2, Bot, Send, FileDown } from "lucide-react";
+import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File, History, CheckSquare, Circle, CheckCircle2, Bot, Send, FileDown, ExternalLink } from "lucide-react";
 import { useState, useMemo, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth";
 import { uploadEngagementDocument, deleteEngagementDocument, getDocumentDownloadUrl, fetchDocumentVersions, uploadDocumentVersion } from "@/lib/api";
 import { useGovernance } from "@/governance/useGovernance";
+import { DocumentLinkerDialog } from "@/components/DocumentLinkerDialog";
 import type { Engagement, Party, Agreement, User, Activity, activityTypes, Document, Task } from "@shared/schema";
 import { documentCategories, taskPriorities, taskStatuses } from "@shared/schema";
 
@@ -75,6 +76,7 @@ export default function EngagementDetail() {
   // Documents state
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDocumentLinkerOpen, setIsDocumentLinkerOpen] = useState(false);
   const [uploadCategory, setUploadCategory] = useState("Other");
   const [showVersionHistory, setShowVersionHistory] = useState<string | null>(null);
   const [documentVersions, setDocumentVersions] = useState<Document[]>([]);
@@ -1210,6 +1212,15 @@ export default function EngagementDetail() {
               </div>
               {canLinkEntities && (
                 <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsDocumentLinkerOpen(true)}
+                    data-testid="button-link-existing-document"
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Link Existing
+                  </Button>
                   <Select value={uploadCategory} onValueChange={setUploadCategory}>
                     <SelectTrigger className="w-40" data-testid="select-upload-category">
                       <SelectValue placeholder="Category" />
@@ -1238,7 +1249,7 @@ export default function EngagementDetail() {
                     ) : (
                       <FileUp className="mr-2 h-4 w-4" />
                     )}
-                    Upload Document
+                    Upload New
                   </Button>
                 </div>
               )}
@@ -1734,6 +1745,17 @@ export default function EngagementDetail() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <DocumentLinkerDialog
+        open={isDocumentLinkerOpen}
+        onOpenChange={setIsDocumentLinkerOpen}
+        engagementId={id}
+        onDocumentLinked={() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "documents"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "timeline"] });
+          toast({ title: "Document linked", description: "Document has been linked to this engagement" });
+        }}
+      />
     </div>
   );
 }
