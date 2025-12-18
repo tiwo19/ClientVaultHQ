@@ -575,7 +575,8 @@ export async function registerRoutes(
         category: category || "Other",
         expirationDate: expirationDate || null,
         notes: notes || null,
-        filePath
+        filePath,
+        uploadedById: req.session.userId || null
       };
 
       const document = await storage.createDocument(docData);
@@ -636,6 +637,77 @@ export async function registerRoutes(
       await storage.deleteDocument(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get single document
+  app.get("/api/documents/:id", requireAuth, async (req, res) => {
+    try {
+      const document = await storage.getDocument(req.params.id);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      res.json(document);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get document versions
+  app.get("/api/documents/:id/versions", requireAuth, async (req, res) => {
+    try {
+      const versions = await storage.getDocumentVersions(req.params.id);
+      res.json(versions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Upload new version of document
+  app.post("/api/documents/:id/versions", requireAuth, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const parentDoc = await storage.getDocument(req.params.id);
+      if (!parentDoc) {
+        return res.status(404).json({ error: "Parent document not found" });
+      }
+
+      // Use the original document's ID as parent (for version chains)
+      const parentId = parentDoc.parentDocumentId || parentDoc.id;
+
+      let filePath: string;
+      if (isS3Configured()) {
+        const s3Key = generateS3Key(req.file.originalname);
+        await uploadToS3(req.file.buffer, s3Key, req.file.mimetype);
+        filePath = `s3://${s3Key}`;
+      } else {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const fileName = uniqueSuffix + '-' + req.file.originalname;
+        filePath = path.join(uploadDir, fileName);
+        fs.writeFileSync(filePath, req.file.buffer);
+      }
+
+      const docData = {
+        agreementId: parentDoc.agreementId,
+        partyId: parentDoc.partyId,
+        engagementId: parentDoc.engagementId,
+        name: req.file.originalname,
+        type: parentDoc.type,
+        category: parentDoc.category,
+        expirationDate: req.body.expirationDate || parentDoc.expirationDate,
+        notes: req.body.notes || parentDoc.notes,
+        filePath,
+        uploadedById: req.session.userId || null
+      };
+
+      const newVersion = await storage.createDocumentVersion(parentId, docData);
+      res.json(newVersion);
+    } catch (error: any) {
+      console.error("Document version upload error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -1434,6 +1506,137 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
 
       const docs = await storage.getDocumentsByEngagement(req.params.id);
       res.json(docs);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Upload document to engagement
+  app.post("/api/engagements/:id/documents", requireAuth, upload.single('file'), async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      // Only owner, internal_admin, internal_user, external_partner can upload documents
+      if (!["owner", "internal_admin", "internal_user", "external_partner"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions to upload documents" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const { type, category, expirationDate, notes } = req.body;
+      let filePath: string;
+
+      if (isS3Configured()) {
+        const s3Key = generateS3Key(req.file.originalname);
+        await uploadToS3(req.file.buffer, s3Key, req.file.mimetype);
+        filePath = `s3://${s3Key}`;
+      } else {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const fileName = uniqueSuffix + '-' + req.file.originalname;
+        filePath = path.join(uploadDir, fileName);
+        fs.writeFileSync(filePath, req.file.buffer);
+      }
+
+      const docData = {
+        engagementId: req.params.id,
+        name: req.file.originalname,
+        type: type || "PDF",
+        category: category || "Other",
+        expirationDate: expirationDate || null,
+        notes: notes || null,
+        filePath,
+        uploadedById: req.session.userId || null
+      };
+
+      const document = await storage.createDocument(docData);
+
+      // Auto-create timeline entry for document upload
+      const user = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId: req.params.id,
+        type: "DocumentUploaded",
+        description: `Document "${document.name}" was uploaded`,
+        user: user?.name || "Unknown",
+        userId: req.session.userId,
+        date: new Date().toISOString().split('T')[0]
+      });
+
+      // Create audit log
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        engagementId: req.params.id,
+        action: "document_uploaded",
+        entityType: "document",
+        entityId: document.id,
+        details: { fileName: document.name, category: document.category }
+      });
+
+      res.json(document);
+    } catch (error: any) {
+      console.error("Engagement document upload error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete document from engagement
+  app.delete("/api/engagements/:engagementId/documents/:documentId", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.engagementId, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      // Only owner, internal_admin can delete documents
+      if (!["owner", "internal_admin"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions to delete documents" });
+      }
+
+      const document = await storage.getDocument(req.params.documentId);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      // Delete file from storage
+      if (document.filePath) {
+        if (document.filePath.startsWith("s3://")) {
+          const s3Key = document.filePath.replace("s3://", "");
+          try {
+            await deleteFromS3(s3Key);
+          } catch (err) {
+            console.error("Failed to delete from S3:", err);
+          }
+        } else if (fs.existsSync(document.filePath)) {
+          fs.unlinkSync(document.filePath);
+        }
+      }
+
+      await storage.deleteDocument(req.params.documentId);
+
+      // Auto-create timeline entry for document deletion
+      const user = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId: req.params.engagementId,
+        type: "DocumentDeleted",
+        description: `Document "${document.name}" was deleted`,
+        user: user?.name || "Unknown",
+        userId: req.session.userId,
+        date: new Date().toISOString().split('T')[0]
+      });
+
+      // Create audit log
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        engagementId: req.params.engagementId,
+        action: "document_deleted",
+        entityType: "document",
+        entityId: req.params.documentId,
+        details: { fileName: document.name }
+      });
+
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

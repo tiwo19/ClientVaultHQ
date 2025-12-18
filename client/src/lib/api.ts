@@ -351,6 +351,67 @@ export function getDocumentDownloadUrl(id: string) {
   return `${API_URL}/documents/${id}/download`;
 }
 
+// Engagement-scoped document operations
+export async function fetchEngagementDocuments(engagementId: string) {
+  const response = await fetch(`${API_URL}/engagements/${engagementId}/documents`, { credentials: "include" });
+  return handleResponse(response);
+}
+
+export interface EngagementDocumentUploadOptions {
+  engagementId: string;
+  file: File;
+  type?: string;
+  category?: string;
+  expirationDate?: string;
+  notes?: string;
+}
+
+export async function uploadEngagementDocument(options: EngagementDocumentUploadOptions) {
+  const { engagementId, file, type = "PDF", category = "Other", expirationDate, notes } = options;
+  
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("type", type);
+  formData.append("category", category);
+  if (expirationDate) formData.append("expirationDate", expirationDate);
+  if (notes) formData.append("notes", notes);
+
+  const response = await fetch(`${API_URL}/engagements/${engagementId}/documents`, {
+    method: "POST",
+    body: formData,
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+export async function deleteEngagementDocument(engagementId: string, documentId: string) {
+  const response = await fetch(`${API_URL}/engagements/${engagementId}/documents/${documentId}`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+// Document versioning
+export async function fetchDocumentVersions(documentId: string) {
+  const response = await fetch(`${API_URL}/documents/${documentId}/versions`, { credentials: "include" });
+  return handleResponse(response);
+}
+
+export async function uploadDocumentVersion(documentId: string, file: File, expirationDate?: string, notes?: string) {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (expirationDate) formData.append("expirationDate", expirationDate);
+  if (notes) formData.append("notes", notes);
+
+  const response = await fetch(`${API_URL}/documents/${documentId}/versions`, {
+    method: "POST",
+    body: formData,
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
 // ==================== PARTY RELATIONSHIPS ====================
 
 export async function fetchPartyRelationships() {

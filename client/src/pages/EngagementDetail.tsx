@@ -9,14 +9,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File, History } from "lucide-react";
 import { useState, useMemo, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth";
-import { uploadDocument, deleteDocument, getDocumentDownloadUrl } from "@/lib/api";
+import { uploadEngagementDocument, deleteEngagementDocument, getDocumentDownloadUrl, fetchDocumentVersions, uploadDocumentVersion } from "@/lib/api";
 import type { Engagement, Party, Agreement, User, Activity, activityTypes, Document } from "@shared/schema";
+import { documentCategories } from "@shared/schema";
 
 const userActivityTypes = ["Call", "Email", "LetterSent", "InternalNote", "Meeting", "CourtFiling"] as const;
 
@@ -73,6 +74,9 @@ export default function EngagementDetail() {
   // Documents state
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadCategory, setUploadCategory] = useState("Other");
+  const [showVersionHistory, setShowVersionHistory] = useState<string | null>(null);
+  const [documentVersions, setDocumentVersions] = useState<Document[]>([]);
 
   const { data: engagement, isLoading } = useQuery<Engagement>({
     queryKey: ["/api/engagements", id],
@@ -347,15 +351,16 @@ export default function EngagementDetail() {
 
     setIsUploading(true);
     try {
-      await uploadDocument({
-        file,
+      await uploadEngagementDocument({
         engagementId: id,
+        file,
         type: file.type.includes("pdf") ? "PDF" : file.type.includes("image") ? "Image" : "Other",
-        category: "Other"
+        category: uploadCategory
       });
       queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "documents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "timeline"] });
       toast({ title: "Document Uploaded" });
+      setUploadCategory("Other"); // Reset category
     } catch (error: any) {
       toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
     } finally {
@@ -366,10 +371,12 @@ export default function EngagementDetail() {
 
   const deleteDocumentMutation = useMutation({
     mutationFn: async (docId: string) => {
-      await deleteDocument(docId);
+      if (!id) throw new Error("Engagement ID required");
+      await deleteEngagementDocument(id, docId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "documents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "timeline"] });
       toast({ title: "Document Deleted" });
     },
     onError: (err: any) => {
@@ -1040,7 +1047,17 @@ export default function EngagementDetail() {
                 <CardDescription>Files and documents attached to this engagement</CardDescription>
               </div>
               {canLinkEntities && (
-                <>
+                <div className="flex items-center gap-2">
+                  <Select value={uploadCategory} onValueChange={setUploadCategory}>
+                    <SelectTrigger className="w-40" data-testid="select-upload-category">
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {documentCategories.map(cat => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <input
                     type="file"
                     ref={fileInputRef}
@@ -1061,7 +1078,7 @@ export default function EngagementDetail() {
                     )}
                     Upload Document
                   </Button>
-                </>
+                </div>
               )}
             </CardHeader>
             <CardContent>
@@ -1074,8 +1091,9 @@ export default function EngagementDetail() {
                       <TableHead>Name</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Category</TableHead>
+                      <TableHead>Version</TableHead>
                       <TableHead>Uploaded</TableHead>
-                      <TableHead className="w-24">Actions</TableHead>
+                      <TableHead className="w-32">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1093,6 +1111,9 @@ export default function EngagementDetail() {
                         <TableCell className="text-muted-foreground">
                           {doc.category}
                         </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">v{doc.version}</Badge>
+                        </TableCell>
                         <TableCell className="text-muted-foreground">
                           {doc.dateUploaded ? format(new Date(doc.dateUploaded), "MMM d, yyyy") : "-"}
                         </TableCell>
@@ -1102,15 +1123,30 @@ export default function EngagementDetail() {
                               variant="ghost"
                               size="icon"
                               asChild
+                              title="Download"
                             >
                               <a href={getDocumentDownloadUrl(doc.id)} target="_blank" rel="noopener noreferrer">
                                 <Download className="h-4 w-4" />
                               </a>
                             </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Version History"
+                              onClick={async () => {
+                                const parentId = doc.parentDocumentId || doc.id;
+                                const versions = await fetchDocumentVersions(parentId);
+                                setDocumentVersions(versions);
+                                setShowVersionHistory(parentId);
+                              }}
+                            >
+                              <History className="h-4 w-4" />
+                            </Button>
                             {canLinkEntities && (
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                title="Delete"
                                 onClick={() => {
                                   if (confirm("Delete this document?")) {
                                     deleteDocumentMutation.mutate(doc.id);
@@ -1129,6 +1165,52 @@ export default function EngagementDetail() {
               )}
             </CardContent>
           </Card>
+
+          {/* Version History Dialog */}
+          <Dialog open={!!showVersionHistory} onOpenChange={() => setShowVersionHistory(null)}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Version History</DialogTitle>
+                <DialogDescription>All versions of this document</DialogDescription>
+              </DialogHeader>
+              <div className="max-h-80 overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Version</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Uploaded</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {documentVersions.map((ver) => (
+                      <TableRow key={ver.id}>
+                        <TableCell>
+                          <Badge variant="secondary">v{ver.version}</Badge>
+                        </TableCell>
+                        <TableCell>{ver.name}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {ver.dateUploaded ? format(new Date(ver.dateUploaded), "MMM d, yyyy HH:mm") : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            asChild
+                          >
+                            <a href={getDocumentDownloadUrl(ver.id)} target="_blank" rel="noopener noreferrer">
+                              <Download className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </div>

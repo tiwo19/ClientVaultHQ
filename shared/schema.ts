@@ -106,6 +106,7 @@ export const activityTypes = [
   "AgreementLinked",
   "AgreementUnlinked",
   "DocumentUploaded",
+  "DocumentDeleted",
   "StatusChanged",
   "EngagementCreated"
 ] as const;
