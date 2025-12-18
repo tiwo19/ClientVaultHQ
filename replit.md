@@ -166,6 +166,21 @@ Preferred communication style: Simple, everyday language.
 - Environment variables required: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET`, `AWS_REGION`
 - Documents stored with `s3://` prefix in database `filePath` field
 
+**Document Versioning (December 2024):**
+- Documents support version history with version numbers and parent document chains
+- Schema includes: version (integer), parentDocumentId (for version chains), uploadedById
+- Storage methods: getDocumentVersions(), createDocumentVersion() for version management
+- API endpoints: GET /documents/:id/versions, POST /documents/:id/versions
+- Engagement-scoped document operations with RBAC enforcement
+- Automatic timeline entries for DocumentUploaded/DocumentDeleted events
+- UI features category selection on upload and version history dialog
+
+**Engagement Command Center (December 2024):**
+- Phase 1: Engagement workspaces with 6-role RBAC (owner, internal_admin, internal_user, external_partner, viewer, auditor)
+- Phase 2: Unified timeline with type and date filtering, auto-logged system events
+- Phase 3: Document hardening with versioning, RBAC-enforced operations, audit logging
+- Remaining phases: Search+Tasks, Exports+AI Advisor
+
 **Future Considerations:**
 - Session store should use PostgreSQL (connect-pg-simple) or Redis in production
 - Email notifications (nodemailer dependency present but unused)
