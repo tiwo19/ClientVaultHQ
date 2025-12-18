@@ -90,16 +90,40 @@ export const insertAgreementSchema = createInsertSchema(agreements).omit({ id: t
 export type InsertAgreement = z.infer<typeof insertAgreementSchema>;
 export type Agreement = typeof agreements.$inferSelect;
 
+// Activity types for timeline
+export const activityTypes = [
+  "Call",
+  "Email", 
+  "LetterSent",
+  "InternalNote",
+  "Meeting",
+  "CourtFiling",
+  // Engagement-specific system events
+  "MemberAdded",
+  "MemberRemoved",
+  "PartyLinked",
+  "PartyUnlinked",
+  "AgreementLinked",
+  "AgreementUnlinked",
+  "DocumentUploaded",
+  "StatusChanged",
+  "EngagementCreated"
+] as const;
+export type ActivityType = typeof activityTypes[number];
+
 // Activities table
 export const activities = pgTable("activities", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   agreementId: varchar("agreement_id").references(() => agreements.id, { onDelete: "cascade" }),
   partyId: varchar("party_id").references(() => parties.id, { onDelete: "cascade" }),
-  type: text("type").notNull(), // Call, Email, LetterSent, InternalNote, Meeting, CourtFiling
+  engagementId: varchar("engagement_id"), // FK added via migration - references engagements.id
+  type: text("type").notNull(), // Call, Email, LetterSent, InternalNote, Meeting, CourtFiling, system events
   content: text("content").notNull(),
   date: text("date").notNull(),
   user: text("user").notNull(),
+  userId: varchar("user_id").references(() => users.id), // Link to actual user for system events
   imageUrl: text("image_url"), // Optional attached screenshot/image path
+  metadata: text("metadata"), // JSON string for additional event data
 });
 
 export const insertActivitySchema = createInsertSchema(activities).omit({ id: true });
