@@ -67,6 +67,8 @@ export default function EngagementDetail() {
   const [newActivityType, setNewActivityType] = useState<string>("InternalNote");
   const [newActivityContent, setNewActivityContent] = useState("");
   const [timelineTypeFilter, setTimelineTypeFilter] = useState<string>("all");
+  const [timelineStartDate, setTimelineStartDate] = useState<string>("");
+  const [timelineEndDate, setTimelineEndDate] = useState<string>("");
 
   // Documents state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -140,11 +142,17 @@ export default function EngagementDetail() {
     }
   });
 
-  // Timeline query
+  // Timeline query with server-side filtering
   const { data: timeline = [] } = useQuery<Activity[]>({
-    queryKey: ["/api/engagements", id, "timeline"],
+    queryKey: ["/api/engagements", id, "timeline", timelineTypeFilter, timelineStartDate, timelineEndDate],
     queryFn: async () => {
-      const res = await fetch(`/api/engagements/${id}/timeline`, { credentials: "include" });
+      const params = new URLSearchParams();
+      if (timelineTypeFilter && timelineTypeFilter !== "all") params.append("type", timelineTypeFilter);
+      if (timelineStartDate) params.append("startDate", timelineStartDate);
+      if (timelineEndDate) params.append("endDate", timelineEndDate);
+      const queryString = params.toString();
+      const url = `/api/engagements/${id}/timeline${queryString ? `?${queryString}` : ""}`;
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -369,11 +377,8 @@ export default function EngagementDetail() {
     }
   });
 
-  // Filtered timeline - must be before early returns to maintain hook order
-  const filteredTimeline = useMemo(() => {
-    if (timelineTypeFilter === "all") return timeline;
-    return timeline.filter(a => a.type === timelineTypeFilter);
-  }, [timeline, timelineTypeFilter]);
+  // Timeline is now filtered server-side, so just use the data directly
+  const filteredTimeline = timeline;
 
   const startEditing = () => {
     if (engagement) {
@@ -887,7 +892,7 @@ export default function EngagementDetail() {
                 <CardTitle>Engagement Timeline</CardTitle>
                 <CardDescription>Activity history and communications log</CardDescription>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Select value={timelineTypeFilter} onValueChange={setTimelineTypeFilter}>
                   <SelectTrigger className="w-40">
                     <SelectValue placeholder="Filter by type" />
@@ -899,6 +904,37 @@ export default function EngagementDetail() {
                     ))}
                   </SelectContent>
                 </Select>
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="date"
+                    value={timelineStartDate}
+                    onChange={(e) => setTimelineStartDate(e.target.value)}
+                    className="w-36"
+                    placeholder="Start date"
+                    data-testid="input-timeline-start-date"
+                  />
+                  <span className="text-muted-foreground">to</span>
+                  <Input
+                    type="date"
+                    value={timelineEndDate}
+                    onChange={(e) => setTimelineEndDate(e.target.value)}
+                    className="w-36"
+                    placeholder="End date"
+                    data-testid="input-timeline-end-date"
+                  />
+                  {(timelineStartDate || timelineEndDate) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setTimelineStartDate("");
+                        setTimelineEndDate("");
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
                 {canEditTimeline && (
                   <Dialog open={isAddActivityOpen} onOpenChange={setIsAddActivityOpen}>
                     <DialogTrigger asChild>
