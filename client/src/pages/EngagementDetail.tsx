@@ -10,14 +10,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File, History } from "lucide-react";
+import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File, History, CheckSquare, Circle, CheckCircle2 } from "lucide-react";
 import { useState, useMemo, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth";
 import { uploadEngagementDocument, deleteEngagementDocument, getDocumentDownloadUrl, fetchDocumentVersions, uploadDocumentVersion } from "@/lib/api";
-import type { Engagement, Party, Agreement, User, Activity, activityTypes, Document } from "@shared/schema";
-import { documentCategories } from "@shared/schema";
+import type { Engagement, Party, Agreement, User, Activity, activityTypes, Document, Task } from "@shared/schema";
+import { documentCategories, taskPriorities, taskStatuses } from "@shared/schema";
 
 const userActivityTypes = ["Call", "Email", "LetterSent", "InternalNote", "Meeting", "CourtFiling"] as const;
 
@@ -77,6 +77,14 @@ export default function EngagementDetail() {
   const [uploadCategory, setUploadCategory] = useState("Other");
   const [showVersionHistory, setShowVersionHistory] = useState<string | null>(null);
   const [documentVersions, setDocumentVersions] = useState<Document[]>([]);
+
+  // Tasks state
+  const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [newTaskPriority, setNewTaskPriority] = useState<string>("Medium");
+  const [newTaskDueDate, setNewTaskDueDate] = useState("");
+  const [newTaskAssignee, setNewTaskAssignee] = useState("");
 
   const { data: engagement, isLoading } = useQuery<Engagement>({
     queryKey: ["/api/engagements", id],
@@ -168,6 +176,17 @@ export default function EngagementDetail() {
     queryKey: ["/api/engagements", id, "documents"],
     queryFn: async () => {
       const res = await fetch(`/api/engagements/${id}/documents`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!id
+  });
+
+  // Tasks query
+  const { data: tasks = [] } = useQuery<Task[]>({
+    queryKey: ["/api/engagements", id, "tasks"],
+    queryFn: async () => {
+      const res = await fetch(`/api/engagements/${id}/tasks`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -344,6 +363,68 @@ export default function EngagementDetail() {
     }
   });
 
+  // Task mutations
+  const addTaskMutation = useMutation({
+    mutationFn: async (data: { title: string; description?: string; priority: string; dueDate?: string; assigneeId?: string }) => {
+      const res = await fetch(`/api/engagements/${id}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) throw new Error("Failed to create task");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "timeline"] });
+      setIsAddTaskOpen(false);
+      setNewTaskTitle("");
+      setNewTaskDescription("");
+      setNewTaskPriority("Medium");
+      setNewTaskDueDate("");
+      setNewTaskAssignee("");
+      toast({ title: "Task Created" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const updateTaskMutation = useMutation({
+    mutationFn: async ({ taskId, data }: { taskId: string; data: Partial<Task> }) => {
+      const res = await fetch(`/api/engagements/${id}/tasks/${taskId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) throw new Error("Failed to update task");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "timeline"] });
+      toast({ title: "Task Updated" });
+    }
+  });
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const res = await fetch(`/api/engagements/${id}/tasks/${taskId}`, {
+        method: "DELETE",
+        credentials: "include"
+      });
+      if (!res.ok) throw new Error("Failed to delete task");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "timeline"] });
+      toast({ title: "Task Deleted" });
+    }
+  });
+
   // Document upload handler
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -505,6 +586,10 @@ export default function EngagementDetail() {
           <TabsTrigger value="documents" data-testid="tab-documents">
             <File className="mr-2 h-4 w-4" />
             Documents ({engagementDocuments.length})
+          </TabsTrigger>
+          <TabsTrigger value="tasks" data-testid="tab-tasks">
+            <CheckSquare className="mr-2 h-4 w-4" />
+            Tasks ({tasks.length})
           </TabsTrigger>
         </TabsList>
 
@@ -1211,6 +1296,188 @@ export default function EngagementDetail() {
               </div>
             </DialogContent>
           </Dialog>
+        </TabsContent>
+
+        <TabsContent value="tasks">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Tasks</CardTitle>
+                <CardDescription>Action items and to-dos for this engagement</CardDescription>
+              </div>
+              {canLinkEntities && (
+                <Dialog open={isAddTaskOpen} onOpenChange={setIsAddTaskOpen}>
+                  <DialogTrigger asChild>
+                    <Button data-testid="button-add-task">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Task
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create New Task</DialogTitle>
+                      <DialogDescription>Add an action item for this engagement</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label>Title</Label>
+                        <Input
+                          value={newTaskTitle}
+                          onChange={(e) => setNewTaskTitle(e.target.value)}
+                          placeholder="Enter task title"
+                          data-testid="input-task-title"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Description (optional)</Label>
+                        <Textarea
+                          value={newTaskDescription}
+                          onChange={(e) => setNewTaskDescription(e.target.value)}
+                          placeholder="Enter task description"
+                          rows={3}
+                          data-testid="input-task-description"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Priority</Label>
+                          <Select value={newTaskPriority} onValueChange={setNewTaskPriority}>
+                            <SelectTrigger data-testid="select-task-priority">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {taskPriorities.map(p => (
+                                <SelectItem key={p} value={p}>{p}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Due Date (optional)</Label>
+                          <Input
+                            type="date"
+                            value={newTaskDueDate}
+                            onChange={(e) => setNewTaskDueDate(e.target.value)}
+                            data-testid="input-task-due-date"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Assign To (optional)</Label>
+                        <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
+                          <SelectTrigger data-testid="select-task-assignee">
+                            <SelectValue placeholder="Select assignee" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">Unassigned</SelectItem>
+                            {members.map((m: any) => (
+                              <SelectItem key={m.userId} value={m.userId}>{m.user?.name || m.userId}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        onClick={() => addTaskMutation.mutate({
+                          title: newTaskTitle,
+                          description: newTaskDescription || undefined,
+                          priority: newTaskPriority,
+                          dueDate: newTaskDueDate || undefined,
+                          assigneeId: newTaskAssignee || undefined
+                        })}
+                        disabled={!newTaskTitle.trim() || addTaskMutation.isPending}
+                        data-testid="button-submit-task"
+                      >
+                        Create Task
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
+            </CardHeader>
+            <CardContent>
+              {tasks.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">No tasks yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {tasks.map((task: Task) => (
+                    <div
+                      key={task.id}
+                      className={`flex items-start gap-3 p-4 rounded-lg border ${
+                        task.status === "Completed" ? "bg-muted/50" : ""
+                      }`}
+                      data-testid={`task-row-${task.id}`}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0 mt-0.5"
+                        onClick={() => updateTaskMutation.mutate({
+                          taskId: task.id,
+                          data: { status: task.status === "Completed" ? "Open" : "Completed" }
+                        })}
+                        data-testid={`task-toggle-${task.id}`}
+                      >
+                        {task.status === "Completed" ? (
+                          <CheckCircle2 className="h-5 w-5 text-green-600" />
+                        ) : (
+                          <Circle className="h-5 w-5 text-muted-foreground" />
+                        )}
+                      </Button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`font-medium ${task.status === "Completed" ? "line-through text-muted-foreground" : ""}`}>
+                            {task.title}
+                          </span>
+                          <Badge
+                            variant={task.priority === "Urgent" ? "destructive" : task.priority === "High" ? "default" : "secondary"}
+                            className="text-xs"
+                          >
+                            {task.priority}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {task.status}
+                          </Badge>
+                        </div>
+                        {task.description && (
+                          <p className="text-sm text-muted-foreground mt-1">{task.description}</p>
+                        )}
+                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                          {task.dueDate && (
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              Due: {format(new Date(task.dueDate), "MMM d, yyyy")}
+                            </span>
+                          )}
+                          {task.assigneeId && (
+                            <span className="flex items-center gap-1">
+                              <Users className="h-3 w-3" />
+                              {members.find((m: any) => m.userId === task.assigneeId)?.user?.name || "Assigned"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {canLinkEntities && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (confirm("Delete this task?")) {
+                              deleteTaskMutation.mutate(task.id);
+                            }
+                          }}
+                          data-testid={`task-delete-${task.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

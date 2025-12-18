@@ -1559,7 +1559,7 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
       await storage.createActivity({
         engagementId: req.params.id,
         type: "DocumentUploaded",
-        description: `Document "${document.name}" was uploaded`,
+        content: `Document "${document.name}" was uploaded`,
         user: user?.name || "Unknown",
         userId: req.session.userId,
         date: new Date().toISOString().split('T')[0]
@@ -1572,7 +1572,7 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         action: "document_uploaded",
         entityType: "document",
         entityId: document.id,
-        details: { fileName: document.name, category: document.category }
+        metadata: JSON.stringify({ fileName: document.name, category: document.category })
       });
 
       res.json(document);
@@ -1620,7 +1620,7 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
       await storage.createActivity({
         engagementId: req.params.engagementId,
         type: "DocumentDeleted",
-        description: `Document "${document.name}" was deleted`,
+        content: `Document "${document.name}" was deleted`,
         user: user?.name || "Unknown",
         userId: req.session.userId,
         date: new Date().toISOString().split('T')[0]
@@ -1633,7 +1633,7 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         action: "document_deleted",
         entityType: "document",
         entityId: req.params.documentId,
-        details: { fileName: document.name }
+        metadata: JSON.stringify({ fileName: document.name })
       });
 
       res.json({ success: true });
@@ -1730,6 +1730,137 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
         entityType: "activity",
         entityId: req.params.activityId,
       });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== ENGAGEMENT TASKS ROUTES ====================
+
+  // Get tasks for an engagement
+  app.get("/api/engagements/:id/tasks", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const taskList = await storage.getTasksByEngagement(req.params.id);
+      res.json(taskList);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create task in engagement
+  app.post("/api/engagements/:id/tasks", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      // Only owner, internal_admin, internal_user can create tasks
+      if (!["owner", "internal_admin", "internal_user"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions to create tasks" });
+      }
+
+      const task = await storage.createTask({
+        ...req.body,
+        engagementId: req.params.id,
+        createdById: req.session.userId,
+      });
+
+      // Auto-create timeline entry for task creation
+      const user = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId: req.params.id,
+        type: "TaskCreated",
+        content: `Task "${task.title}" was created`,
+        userId: req.session.userId,
+        user: user?.name || "Unknown",
+        date: new Date().toISOString().split('T')[0],
+      });
+
+      res.json(task);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update task
+  app.put("/api/engagements/:engagementId/tasks/:taskId", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.engagementId, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!["owner", "internal_admin", "internal_user"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const oldTask = await storage.getTask(req.params.taskId);
+      const updateData: any = { ...req.body };
+      
+      // Set completedAt if transitioning to Completed status
+      if (req.body.status === "Completed" && oldTask?.status !== "Completed") {
+        updateData.completedAt = new Date();
+      }
+      // Clear completedAt if transitioning away from Completed
+      if (req.body.status && req.body.status !== "Completed" && oldTask?.status === "Completed") {
+        updateData.completedAt = null;
+      }
+
+      const task = await storage.updateTask(req.params.taskId, updateData);
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      // Auto-create timeline entry for task completion
+      if (req.body.status === "Completed" && oldTask?.status !== "Completed") {
+        const user = await storage.getUser(req.session.userId!);
+        await storage.createActivity({
+          engagementId: req.params.engagementId,
+          type: "TaskCompleted",
+          content: `Task "${task.title}" was completed`,
+          userId: req.session.userId,
+          user: user?.name || "Unknown",
+          date: new Date().toISOString().split('T')[0],
+        });
+      }
+
+      res.json(task);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete task
+  app.delete("/api/engagements/:engagementId/tasks/:taskId", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.engagementId, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!["owner", "internal_admin"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const task = await storage.getTask(req.params.taskId);
+      await storage.deleteTask(req.params.taskId);
+
+      // Auto-create timeline entry
+      if (task) {
+        const user = await storage.getUser(req.session.userId!);
+        await storage.createActivity({
+          engagementId: req.params.engagementId,
+          type: "TaskDeleted",
+          content: `Task "${task.title}" was deleted`,
+          userId: req.session.userId,
+          user: user?.name || "Unknown",
+          date: new Date().toISOString().split('T')[0],
+        });
+      }
 
       res.json({ success: true });
     } catch (error: any) {
