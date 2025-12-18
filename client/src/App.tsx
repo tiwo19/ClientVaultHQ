@@ -10,6 +10,8 @@ import Parties from "@/pages/Parties";
 import PartyDetail from "@/pages/PartyDetail";
 import AgreementDetail from "@/pages/AgreementDetail";
 import AIBucket from "@/pages/AIBucket";
+import Engagements from "@/pages/Engagements";
+import EngagementDetail from "@/pages/EngagementDetail";
 import Login from "@/pages/Login";
 import AdminUsers from "@/pages/AdminUsers";
 import NotFound from "@/pages/not-found";
@@ -69,6 +71,12 @@ function Router() {
       </Route>
       <Route path="/ai-bucket">
         <ProtectedRoute component={AIBucket} />
+      </Route>
+      <Route path="/engagements">
+        <ProtectedRoute component={Engagements} />
+      </Route>
+      <Route path="/engagements/:id">
+        <ProtectedRoute component={EngagementDetail} />
       </Route>
       
       <Route component={NotFound} />
