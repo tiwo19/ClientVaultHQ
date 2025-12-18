@@ -61,9 +61,11 @@ export interface IStorage {
   getDocumentsByAgreement(agreementId: string): Promise<Document[]>;
   getDocumentsByEngagement(engagementId: string): Promise<Document[]>;
   getDocumentVersions(parentDocumentId: string): Promise<Document[]>;
+  searchDocuments(filters: { query?: string; category?: string; excludeEngagementId?: string }): Promise<Document[]>;
   createDocument(doc: InsertDocument): Promise<Document>;
   createDocumentVersion(parentDocumentId: string, doc: InsertDocument): Promise<Document>;
   deleteDocument(id: string): Promise<void>;
+  linkDocumentToEngagement(documentId: string, engagementId: string): Promise<Document | undefined>;
 
   // Party Relationships
   getAllPartyRelationships(): Promise<PartyRelationship[]>;
@@ -320,6 +322,34 @@ export class DbStorage implements IStorage {
 
   async deleteDocument(id: string): Promise<void> {
     await db.delete(documents).where(eq(documents.id, id));
+  }
+
+  async searchDocuments(filters: { query?: string; category?: string; excludeEngagementId?: string }): Promise<Document[]> {
+    let results = await db.select().from(documents).orderBy(desc(documents.dateUploaded));
+    
+    if (filters.query) {
+      const q = filters.query.toLowerCase();
+      results = results.filter(d => 
+        d.name.toLowerCase().includes(q) || 
+        (d.notes && d.notes.toLowerCase().includes(q)) ||
+        d.type.toLowerCase().includes(q)
+      );
+    }
+    if (filters.category) {
+      results = results.filter(d => d.category === filters.category);
+    }
+    if (filters.excludeEngagementId) {
+      results = results.filter(d => d.engagementId !== filters.excludeEngagementId);
+    }
+    return results.slice(0, 50);
+  }
+
+  async linkDocumentToEngagement(documentId: string, engagementId: string): Promise<Document | undefined> {
+    const result = await db.update(documents)
+      .set({ engagementId })
+      .where(eq(documents.id, documentId))
+      .returning();
+    return result[0];
   }
 
   // Party Relationships

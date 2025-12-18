@@ -546,6 +546,49 @@ export async function registerRoutes(
     }
   });
 
+  // Document search endpoint for linking documents to engagements
+  app.get("/api/documents/search", requireAuth, async (req, res) => {
+    try {
+      const { q, category, excludeEngagementId } = req.query;
+      const documents = await storage.searchDocuments({
+        query: q as string,
+        category: category as string,
+        excludeEngagementId: excludeEngagementId as string
+      });
+      res.json(documents);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Link existing document to engagement
+  app.post("/api/documents/:id/link", requireAuth, async (req, res) => {
+    try {
+      const { engagementId } = req.body;
+      if (!engagementId) {
+        return res.status(400).json({ error: "engagementId is required" });
+      }
+      const document = await storage.linkDocumentToEngagement(req.params.id, engagementId);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      
+      // Log to timeline
+      const user = await storage.getUser(req.session.userId!);
+      await storage.createActivity({
+        engagementId,
+        type: "DocumentLinked",
+        date: new Date().toISOString(),
+        summary: `Document "${document.name}" linked to engagement`,
+        user: user?.name || "System"
+      });
+      
+      res.json(document);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/documents/upload", requireAuth, upload.single('file'), async (req, res) => {
     try {
       if (!req.file) {
