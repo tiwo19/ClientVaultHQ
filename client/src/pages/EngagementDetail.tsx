@@ -11,9 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { useAuth } from "@/lib/auth";
 import type { Engagement, Party, Agreement, User } from "@shared/schema";
 
 const engagementTypes = ["Contract", "Loan", "JointVenture", "VendorAgreement", "Dispute", "Collection", "Litigation", "Advisory", "Other"] as const;
@@ -40,6 +41,7 @@ export default function EngagementDetail() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [isAddPartyOpen, setIsAddPartyOpen] = useState(false);
@@ -97,13 +99,14 @@ export default function EngagementDetail() {
     enabled: !!id
   });
 
-  const { data: allUsers = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+  const { data: availableUsers = [] } = useQuery<User[]>({
+    queryKey: ["/api/engagements", id, "available-users"],
     queryFn: async () => {
-      const res = await fetch("/api/users", { credentials: "include" });
+      const res = await fetch(`/api/engagements/${id}/available-users`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
-    }
+    },
+    enabled: !!id
   });
 
   const { data: allParties = [] } = useQuery<Party[]>({
@@ -295,12 +298,20 @@ export default function EngagementDetail() {
     );
   }
 
-  const existingMemberUserIds = members.map((m: any) => m.userId);
-  const availableUsers = allUsers.filter((u: any) => !existingMemberUserIds.includes(u.id));
+  // Calculate user's role in this engagement
+  const myMembership = members.find((m: any) => m.userId === currentUser?.id);
+  const myRole = myMembership?.role || (currentUser?.role === "Admin" ? "internal_admin" : null);
+  
+  // Permission checks based on engagement role
+  const canEdit = myRole === "owner" || myRole === "internal_admin";
+  const canManageMembers = myRole === "owner" || myRole === "internal_admin";
+  const canLinkEntities = ["owner", "internal_admin", "internal_user"].includes(myRole || "");
+
+  // Derived lists for available items (server-side filtered for users)
   const existingPartyIds = engagementParties.map((ep: any) => ep.partyId);
-  const availableParties = allParties.filter((p: Party) => !existingPartyIds.includes(p.id));
+  const availablePartyList = allParties.filter((p: Party) => !existingPartyIds.includes(p.id));
   const existingAgreementIds = engagementAgreements.map((ea: any) => ea.agreementId);
-  const availableAgreements = allAgreements.filter((a: Agreement) => !existingAgreementIds.includes(a.id));
+  const availableAgreementList = allAgreements.filter((a: Agreement) => !existingAgreementIds.includes(a.id));
 
   return (
     <div className="space-y-6">
@@ -319,19 +330,21 @@ export default function EngagementDetail() {
             <p className="text-sm text-muted-foreground">Ref: {engagement.referenceNumber}</p>
           )}
         </div>
-        {!isEditing ? (
-          <Button variant="outline" onClick={startEditing} data-testid="button-edit-engagement">
-            <Edit className="mr-2 h-4 w-4" />
-            Edit
-          </Button>
-        ) : (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={updateMutation.isPending} data-testid="button-save-engagement">
-              <Save className="mr-2 h-4 w-4" />
-              Save
+        {canEdit && (
+          !isEditing ? (
+            <Button variant="outline" onClick={startEditing} data-testid="button-edit-engagement">
+              <Edit className="mr-2 h-4 w-4" />
+              Edit
             </Button>
-          </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
+              <Button onClick={handleSave} disabled={updateMutation.isPending} data-testid="button-save-engagement">
+                <Save className="mr-2 h-4 w-4" />
+                Save
+              </Button>
+            </div>
+          )
         )}
       </div>
 
@@ -438,51 +451,53 @@ export default function EngagementDetail() {
                 <CardTitle>Team Members</CardTitle>
                 <CardDescription>Users with access to this engagement</CardDescription>
               </div>
-              <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" data-testid="button-add-member">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Member
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add Team Member</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>User</Label>
-                      <Select value={newMemberUserId} onValueChange={setNewMemberUserId}>
-                        <SelectTrigger><SelectValue placeholder="Select user..." /></SelectTrigger>
-                        <SelectContent>
-                          {availableUsers.map((u: any) => (
-                            <SelectItem key={u.id} value={u.id}>{u.name} ({u.email})</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Role</Label>
-                      <Select value={newMemberRole} onValueChange={setNewMemberRole}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {engagementRoles.map(r => (
-                            <SelectItem key={r} value={r}>{roleLabels[r]}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button 
-                      onClick={() => addMemberMutation.mutate({ userId: newMemberUserId, role: newMemberRole })}
-                      disabled={!newMemberUserId || addMemberMutation.isPending}
-                    >
+              {canManageMembers && (
+                <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" data-testid="button-add-member">
+                      <Plus className="mr-2 h-4 w-4" />
                       Add Member
                     </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add Team Member</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>User</Label>
+                        <Select value={newMemberUserId} onValueChange={setNewMemberUserId}>
+                          <SelectTrigger><SelectValue placeholder="Select user..." /></SelectTrigger>
+                          <SelectContent>
+                            {availableUsers.map((u: any) => (
+                              <SelectItem key={u.id} value={u.id}>{u.name} ({u.email})</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Role</Label>
+                        <Select value={newMemberRole} onValueChange={setNewMemberRole}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {engagementRoles.map(r => (
+                              <SelectItem key={r} value={r}>{roleLabels[r]}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button 
+                        onClick={() => addMemberMutation.mutate({ userId: newMemberUserId, role: newMemberRole })}
+                        disabled={!newMemberUserId || addMemberMutation.isPending}
+                      >
+                        Add Member
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
             </CardHeader>
             <CardContent>
               {members.length === 0 ? (
@@ -515,8 +530,8 @@ export default function EngagementDetail() {
                         <TableCell className="text-muted-foreground">
                           {m.invitedAt ? format(new Date(m.invitedAt), "MMM d, yyyy") : "-"}
                         </TableCell>
-                        <TableCell>
-                          {m.role !== "owner" && (
+                        {canManageMembers && m.role !== "owner" && (
+                          <TableCell>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -528,8 +543,8 @@ export default function EngagementDetail() {
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
-                          )}
-                        </TableCell>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -546,48 +561,50 @@ export default function EngagementDetail() {
                 <CardTitle>Linked Parties</CardTitle>
                 <CardDescription>Companies and individuals involved in this engagement</CardDescription>
               </div>
-              <Dialog open={isAddPartyOpen} onOpenChange={setIsAddPartyOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" data-testid="button-add-party">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Link Party
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Link Party to Engagement</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Party</Label>
-                      <Select value={newPartyId} onValueChange={setNewPartyId}>
-                        <SelectTrigger><SelectValue placeholder="Select party..." /></SelectTrigger>
-                        <SelectContent>
-                          {availableParties.map((p: Party) => (
-                            <SelectItem key={p.id} value={p.id}>{p.name} ({p.type})</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Role in Engagement</Label>
-                      <Input
-                        value={newPartyRole}
-                        onChange={e => setNewPartyRole(e.target.value)}
-                        placeholder="e.g., Counterparty, Guarantor, Counsel..."
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      onClick={() => addPartyMutation.mutate({ partyId: newPartyId, roleInEngagement: newPartyRole || null })}
-                      disabled={!newPartyId || addPartyMutation.isPending}
-                    >
+              {canLinkEntities && (
+                <Dialog open={isAddPartyOpen} onOpenChange={setIsAddPartyOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" data-testid="button-add-party">
+                      <Plus className="mr-2 h-4 w-4" />
                       Link Party
                     </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Link Party to Engagement</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Party</Label>
+                        <Select value={newPartyId} onValueChange={setNewPartyId}>
+                          <SelectTrigger><SelectValue placeholder="Select party..." /></SelectTrigger>
+                          <SelectContent>
+                            {availablePartyList.map((p: Party) => (
+                              <SelectItem key={p.id} value={p.id}>{p.name} ({p.type})</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Role in Engagement</Label>
+                        <Input
+                          value={newPartyRole}
+                          onChange={e => setNewPartyRole(e.target.value)}
+                          placeholder="e.g., Counterparty, Guarantor, Counsel..."
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        onClick={() => addPartyMutation.mutate({ partyId: newPartyId, roleInEngagement: newPartyRole || null })}
+                        disabled={!newPartyId || addPartyMutation.isPending}
+                      >
+                        Link Party
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
             </CardHeader>
             <CardContent>
               {engagementParties.length === 0 ? (
@@ -616,19 +633,21 @@ export default function EngagementDetail() {
                         <TableCell className="text-muted-foreground">
                           {ep.roleInEngagement || "-"}
                         </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              if (confirm("Remove this party from engagement?")) {
-                                removePartyMutation.mutate(ep.id);
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </TableCell>
+                        {canLinkEntities && (
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                if (confirm("Remove this party from engagement?")) {
+                                  removePartyMutation.mutate(ep.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -645,40 +664,42 @@ export default function EngagementDetail() {
                 <CardTitle>Linked Agreements</CardTitle>
                 <CardDescription>Contracts and agreements in this engagement</CardDescription>
               </div>
-              <Dialog open={isAddAgreementOpen} onOpenChange={setIsAddAgreementOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" data-testid="button-add-agreement">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Link Agreement
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Link Agreement to Engagement</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Agreement</Label>
-                      <Select value={newAgreementId} onValueChange={setNewAgreementId}>
-                        <SelectTrigger><SelectValue placeholder="Select agreement..." /></SelectTrigger>
-                        <SelectContent>
-                          {availableAgreements.map((a: Agreement) => (
-                            <SelectItem key={a.id} value={a.id}>{a.title}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      onClick={() => addAgreementMutation.mutate({ agreementId: newAgreementId })}
-                      disabled={!newAgreementId || addAgreementMutation.isPending}
-                    >
+              {canLinkEntities && (
+                <Dialog open={isAddAgreementOpen} onOpenChange={setIsAddAgreementOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" data-testid="button-add-agreement">
+                      <Plus className="mr-2 h-4 w-4" />
                       Link Agreement
                     </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Link Agreement to Engagement</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Agreement</Label>
+                        <Select value={newAgreementId} onValueChange={setNewAgreementId}>
+                          <SelectTrigger><SelectValue placeholder="Select agreement..." /></SelectTrigger>
+                          <SelectContent>
+                            {availableAgreementList.map((a: Agreement) => (
+                              <SelectItem key={a.id} value={a.id}>{a.title}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        onClick={() => addAgreementMutation.mutate({ agreementId: newAgreementId })}
+                        disabled={!newAgreementId || addAgreementMutation.isPending}
+                      >
+                        Link Agreement
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
             </CardHeader>
             <CardContent>
               {engagementAgreements.length === 0 ? (
@@ -707,19 +728,21 @@ export default function EngagementDetail() {
                         <TableCell>
                           <Badge>{ea.agreement?.performanceStatus}</Badge>
                         </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              if (confirm("Remove this agreement from engagement?")) {
-                                removeAgreementMutation.mutate(ea.id);
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </TableCell>
+                        {canLinkEntities && (
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                if (confirm("Remove this agreement from engagement?")) {
+                                  removeAgreementMutation.mutate(ea.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>

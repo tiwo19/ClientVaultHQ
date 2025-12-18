@@ -1030,6 +1030,33 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
 
   // ==================== ENGAGEMENT MEMBERSHIP ROUTES ====================
 
+  // Get available users for adding to engagement (owner/admin of engagement can see all users)
+  app.get("/api/engagements/:id/available-users", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      // Only owner and internal_admin can see available users
+      if (role !== "owner" && role !== "internal_admin") {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const allUsers = await storage.getAllUsers();
+      const existingMemberships = await storage.getEngagementMemberships(req.params.id);
+      const existingUserIds = existingMemberships.map(m => m.userId);
+      
+      // Filter out users already in engagement, return without passwords
+      const availableUsers = allUsers
+        .filter(u => !existingUserIds.includes(u.id))
+        .map(({ password, ...user }) => user);
+      
+      res.json(availableUsers);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get memberships for an engagement
   app.get("/api/engagements/:id/members", requireAuth, async (req, res) => {
     try {
