@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertActivitySchema, insertDocumentSchema, insertContactPointSchema, insertAddressSchema } from "@shared/schema";
+import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertActivitySchema, insertDocumentSchema, insertContactPointSchema, insertAddressSchema, insertEngagementSchema, insertEngagementMembershipSchema, insertEngagementPartySchema, insertEngagementAgreementSchema, engagementRoles, type EngagementRole } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import session from "express-session";
@@ -881,6 +881,430 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
       res.json({ success: true, activity });
     } catch (error: any) {
       console.error("AI Bucket confirm error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== ENGAGEMENT ROUTES ====================
+
+  // Helper function to check engagement access
+  const getEngagementAccess = async (engagementId: string, userId: string): Promise<{ hasAccess: boolean; role: EngagementRole | null; membership: any | null }> => {
+    const membership = await storage.getUserEngagementMembership(engagementId, userId);
+    if (!membership) {
+      // Check if user is admin - admins have access to all engagements
+      const user = await storage.getUser(userId);
+      if (user?.role === "Admin") {
+        return { hasAccess: true, role: "internal_admin" as EngagementRole, membership: null };
+      }
+      return { hasAccess: false, role: null, membership: null };
+    }
+    return { hasAccess: true, role: membership.role as EngagementRole, membership };
+  };
+
+  // Get all engagements (admin sees all, users see their memberships)
+  app.get("/api/engagements", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      let engagementList;
+      if (user.role === "Admin") {
+        engagementList = await storage.getAllEngagements();
+      } else {
+        engagementList = await storage.getEngagementsForUser(user.id);
+      }
+      res.json(engagementList);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get single engagement
+  app.get("/api/engagements/:id", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied to this engagement" });
+      }
+
+      const engagement = await storage.getEngagement(req.params.id);
+      if (!engagement) {
+        return res.status(404).json({ error: "Engagement not found" });
+      }
+      res.json(engagement);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create engagement
+  app.post("/api/engagements", requireAuth, async (req, res) => {
+    try {
+      const engagementData = insertEngagementSchema.parse({
+        ...req.body,
+        createdBy: req.session.userId
+      });
+      const engagement = await storage.createEngagement(engagementData);
+
+      // Automatically add creator as owner
+      await storage.createEngagementMembership({
+        engagementId: engagement.id,
+        userId: req.session.userId!,
+        role: "owner",
+        invitedBy: req.session.userId
+      });
+
+      // Log the creation
+      await storage.createAuditLog({
+        userId: req.session.userId,
+        action: "create",
+        entityType: "engagement",
+        entityId: engagement.id,
+        engagementId: engagement.id,
+        metadata: JSON.stringify({ name: engagement.name })
+      });
+
+      res.json(engagement);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update engagement
+  app.put("/api/engagements/:id", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      // Only owner and internal_admin can update
+      if (role !== "owner" && role !== "internal_admin") {
+        return res.status(403).json({ error: "Insufficient permissions to update engagement" });
+      }
+
+      const engagement = await storage.updateEngagement(req.params.id, req.body);
+      if (!engagement) {
+        return res.status(404).json({ error: "Engagement not found" });
+      }
+
+      await storage.createAuditLog({
+        userId: req.session.userId,
+        action: "update",
+        entityType: "engagement",
+        entityId: engagement.id,
+        engagementId: engagement.id,
+        metadata: JSON.stringify(req.body)
+      });
+
+      res.json(engagement);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete engagement (owner only)
+  app.delete("/api/engagements/:id", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess || role !== "owner") {
+        return res.status(403).json({ error: "Only the owner can delete an engagement" });
+      }
+
+      await storage.createAuditLog({
+        userId: req.session.userId,
+        action: "delete",
+        entityType: "engagement",
+        entityId: req.params.id,
+        metadata: JSON.stringify({ deletedAt: new Date().toISOString() })
+      });
+
+      await storage.deleteEngagement(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== ENGAGEMENT MEMBERSHIP ROUTES ====================
+
+  // Get memberships for an engagement
+  app.get("/api/engagements/:id/members", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const memberships = await storage.getEngagementMemberships(req.params.id);
+      // Enrich with user info
+      const enrichedMemberships = await Promise.all(
+        memberships.map(async (m) => {
+          const user = await storage.getUser(m.userId);
+          return {
+            ...m,
+            user: user ? { id: user.id, name: user.name, email: user.email } : null
+          };
+        })
+      );
+      res.json(enrichedMemberships);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add member to engagement
+  app.post("/api/engagements/:id/members", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      // Only owner and internal_admin can add members
+      if (role !== "owner" && role !== "internal_admin") {
+        return res.status(403).json({ error: "Insufficient permissions to add members" });
+      }
+
+      const membershipData = insertEngagementMembershipSchema.parse({
+        ...req.body,
+        engagementId: req.params.id,
+        invitedBy: req.session.userId
+      });
+
+      // Check if user is already a member
+      const existing = await storage.getUserEngagementMembership(req.params.id, membershipData.userId);
+      if (existing) {
+        return res.status(400).json({ error: "User is already a member of this engagement" });
+      }
+
+      const membership = await storage.createEngagementMembership(membershipData);
+
+      await storage.createAuditLog({
+        userId: req.session.userId,
+        action: "invite",
+        entityType: "engagement_membership",
+        entityId: membership.id,
+        engagementId: req.params.id,
+        metadata: JSON.stringify({ invitedUserId: membershipData.userId, role: membershipData.role })
+      });
+
+      res.json(membership);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update membership role
+  app.put("/api/engagements/:engagementId/members/:membershipId", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.engagementId, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (role !== "owner" && role !== "internal_admin") {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const membership = await storage.updateEngagementMembership(req.params.membershipId, req.body);
+      res.json(membership);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Remove member from engagement
+  app.delete("/api/engagements/:engagementId/members/:membershipId", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.engagementId, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (role !== "owner" && role !== "internal_admin") {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      await storage.createAuditLog({
+        userId: req.session.userId,
+        action: "remove_member",
+        entityType: "engagement_membership",
+        entityId: req.params.membershipId,
+        engagementId: req.params.engagementId
+      });
+
+      await storage.deleteEngagementMembership(req.params.membershipId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== ENGAGEMENT PARTIES ROUTES ====================
+
+  // Get parties linked to an engagement
+  app.get("/api/engagements/:id/parties", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const engagementPartyLinks = await storage.getEngagementParties(req.params.id);
+      // Enrich with party details
+      const enriched = await Promise.all(
+        engagementPartyLinks.map(async (ep) => {
+          const party = await storage.getParty(ep.partyId);
+          return { ...ep, party };
+        })
+      );
+      res.json(enriched);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add party to engagement
+  app.post("/api/engagements/:id/parties", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!["owner", "internal_admin", "internal_user"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const data = insertEngagementPartySchema.parse({
+        ...req.body,
+        engagementId: req.params.id
+      });
+      const link = await storage.addPartyToEngagement(data);
+      res.json(link);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Remove party from engagement
+  app.delete("/api/engagements/:engagementId/parties/:linkId", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.engagementId, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!["owner", "internal_admin", "internal_user"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      await storage.removePartyFromEngagement(req.params.linkId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== ENGAGEMENT AGREEMENTS ROUTES ====================
+
+  // Get agreements linked to an engagement
+  app.get("/api/engagements/:id/agreements", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const engagementAgreementLinks = await storage.getEngagementAgreements(req.params.id);
+      // Enrich with agreement details
+      const enriched = await Promise.all(
+        engagementAgreementLinks.map(async (ea) => {
+          const agreement = await storage.getAgreement(ea.agreementId);
+          return { ...ea, agreement };
+        })
+      );
+      res.json(enriched);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add agreement to engagement
+  app.post("/api/engagements/:id/agreements", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!["owner", "internal_admin", "internal_user"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const data = insertEngagementAgreementSchema.parse({
+        ...req.body,
+        engagementId: req.params.id
+      });
+      const link = await storage.addAgreementToEngagement(data);
+      res.json(link);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Remove agreement from engagement
+  app.delete("/api/engagements/:engagementId/agreements/:linkId", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.engagementId, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!["owner", "internal_admin", "internal_user"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      await storage.removeAgreementFromEngagement(req.params.linkId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== AUDIT LOG ROUTES ====================
+
+  // Get audit logs (admin only for global, or engagement-scoped for members)
+  app.get("/api/audit-logs", requireAuth, async (req, res) => {
+    try {
+      const { engagementId } = req.query;
+      
+      if (engagementId) {
+        const { hasAccess, role } = await getEngagementAccess(engagementId as string, req.session.userId!);
+        if (!hasAccess) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        // Only owner, admin, auditor can see audit logs
+        if (!["owner", "internal_admin", "auditor"].includes(role || "")) {
+          return res.status(403).json({ error: "Insufficient permissions to view audit logs" });
+        }
+        const logs = await storage.getAuditLogs(engagementId as string);
+        return res.json(logs);
+      }
+
+      // Global audit logs - admin only
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.role !== "Admin") {
+        return res.status(403).json({ error: "Admin access required for global audit logs" });
+      }
+      const logs = await storage.getAuditLogs();
+      res.json(logs);
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
