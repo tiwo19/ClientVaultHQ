@@ -10,10 +10,15 @@ import {
   type CreditTransaction, type InsertCreditTransaction,
   type ContactPoint, type InsertContactPoint,
   type Address, type InsertAddress,
+  type Engagement, type InsertEngagement,
+  type EngagementMembership, type InsertEngagementMembership,
+  type EngagementParty, type InsertEngagementParty,
+  type EngagementAgreement, type InsertEngagementAgreement,
+  type AuditLog, type InsertAuditLog,
   users, parties, persons, agreements, activities, documents, partyRelationships, creditTransactions,
-  contactPoints, addresses
+  contactPoints, addresses, engagements, engagementMemberships, engagementParties, engagementAgreements, auditLogs
 } from "@shared/schema";
-import { eq, or, and, desc, sql } from "drizzle-orm";
+import { eq, or, and, desc, sql, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -80,6 +85,35 @@ export interface IStorage {
   createAddress(addr: InsertAddress): Promise<Address>;
   updateAddress(id: string, addr: Partial<InsertAddress>): Promise<Address | undefined>;
   deleteAddress(id: string): Promise<void>;
+
+  // Engagements
+  getAllEngagements(): Promise<Engagement[]>;
+  getEngagement(id: string): Promise<Engagement | undefined>;
+  getEngagementsForUser(userId: string): Promise<Engagement[]>;
+  createEngagement(engagement: InsertEngagement): Promise<Engagement>;
+  updateEngagement(id: string, engagement: Partial<InsertEngagement>): Promise<Engagement | undefined>;
+  deleteEngagement(id: string): Promise<void>;
+
+  // Engagement Memberships
+  getEngagementMemberships(engagementId: string): Promise<EngagementMembership[]>;
+  getUserEngagementMembership(engagementId: string, userId: string): Promise<EngagementMembership | undefined>;
+  createEngagementMembership(membership: InsertEngagementMembership): Promise<EngagementMembership>;
+  updateEngagementMembership(id: string, membership: Partial<InsertEngagementMembership>): Promise<EngagementMembership | undefined>;
+  deleteEngagementMembership(id: string): Promise<void>;
+
+  // Engagement Parties (linking parties to engagements)
+  getEngagementParties(engagementId: string): Promise<EngagementParty[]>;
+  addPartyToEngagement(ep: InsertEngagementParty): Promise<EngagementParty>;
+  removePartyFromEngagement(id: string): Promise<void>;
+
+  // Engagement Agreements (linking agreements to engagements)
+  getEngagementAgreements(engagementId: string): Promise<EngagementAgreement[]>;
+  addAgreementToEngagement(ea: InsertEngagementAgreement): Promise<EngagementAgreement>;
+  removeAgreementFromEngagement(id: string): Promise<void>;
+
+  // Audit Logs
+  createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+  getAuditLogs(engagementId?: string): Promise<AuditLog[]>;
 }
 
 export class DbStorage implements IStorage {
@@ -338,6 +372,125 @@ export class DbStorage implements IStorage {
 
   async deleteAddress(id: string): Promise<void> {
     await db.delete(addresses).where(eq(addresses.id, id));
+  }
+
+  // Engagements
+  async getAllEngagements(): Promise<Engagement[]> {
+    return await db.select().from(engagements).orderBy(desc(engagements.createdAt));
+  }
+
+  async getEngagement(id: string): Promise<Engagement | undefined> {
+    const result = await db.select().from(engagements).where(eq(engagements.id, id));
+    return result[0];
+  }
+
+  async getEngagementsForUser(userId: string): Promise<Engagement[]> {
+    const membershipResults = await db.select({ engagementId: engagementMemberships.engagementId })
+      .from(engagementMemberships)
+      .where(eq(engagementMemberships.userId, userId));
+    
+    if (membershipResults.length === 0) {
+      return [];
+    }
+
+    const engagementIds = membershipResults.map(m => m.engagementId);
+    return await db.select().from(engagements)
+      .where(inArray(engagements.id, engagementIds))
+      .orderBy(desc(engagements.createdAt));
+  }
+
+  async createEngagement(engagement: InsertEngagement): Promise<Engagement> {
+    const result = await db.insert(engagements).values(engagement).returning();
+    return result[0];
+  }
+
+  async updateEngagement(id: string, engagement: Partial<InsertEngagement>): Promise<Engagement | undefined> {
+    const result = await db.update(engagements)
+      .set({ ...engagement, updatedAt: new Date() })
+      .where(eq(engagements.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteEngagement(id: string): Promise<void> {
+    await db.delete(engagements).where(eq(engagements.id, id));
+  }
+
+  // Engagement Memberships
+  async getEngagementMemberships(engagementId: string): Promise<EngagementMembership[]> {
+    return await db.select().from(engagementMemberships)
+      .where(eq(engagementMemberships.engagementId, engagementId));
+  }
+
+  async getUserEngagementMembership(engagementId: string, userId: string): Promise<EngagementMembership | undefined> {
+    const result = await db.select().from(engagementMemberships)
+      .where(and(
+        eq(engagementMemberships.engagementId, engagementId),
+        eq(engagementMemberships.userId, userId)
+      ));
+    return result[0];
+  }
+
+  async createEngagementMembership(membership: InsertEngagementMembership): Promise<EngagementMembership> {
+    const result = await db.insert(engagementMemberships).values(membership).returning();
+    return result[0];
+  }
+
+  async updateEngagementMembership(id: string, membership: Partial<InsertEngagementMembership>): Promise<EngagementMembership | undefined> {
+    const result = await db.update(engagementMemberships)
+      .set(membership)
+      .where(eq(engagementMemberships.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteEngagementMembership(id: string): Promise<void> {
+    await db.delete(engagementMemberships).where(eq(engagementMemberships.id, id));
+  }
+
+  // Engagement Parties
+  async getEngagementParties(engagementId: string): Promise<EngagementParty[]> {
+    return await db.select().from(engagementParties)
+      .where(eq(engagementParties.engagementId, engagementId));
+  }
+
+  async addPartyToEngagement(ep: InsertEngagementParty): Promise<EngagementParty> {
+    const result = await db.insert(engagementParties).values(ep).returning();
+    return result[0];
+  }
+
+  async removePartyFromEngagement(id: string): Promise<void> {
+    await db.delete(engagementParties).where(eq(engagementParties.id, id));
+  }
+
+  // Engagement Agreements
+  async getEngagementAgreements(engagementId: string): Promise<EngagementAgreement[]> {
+    return await db.select().from(engagementAgreements)
+      .where(eq(engagementAgreements.engagementId, engagementId));
+  }
+
+  async addAgreementToEngagement(ea: InsertEngagementAgreement): Promise<EngagementAgreement> {
+    const result = await db.insert(engagementAgreements).values(ea).returning();
+    return result[0];
+  }
+
+  async removeAgreementFromEngagement(id: string): Promise<void> {
+    await db.delete(engagementAgreements).where(eq(engagementAgreements.id, id));
+  }
+
+  // Audit Logs
+  async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
+    const result = await db.insert(auditLogs).values(log).returning();
+    return result[0];
+  }
+
+  async getAuditLogs(engagementId?: string): Promise<AuditLog[]> {
+    if (engagementId) {
+      return await db.select().from(auditLogs)
+        .where(eq(auditLogs.engagementId, engagementId))
+        .orderBy(desc(auditLogs.createdAt));
+    }
+    return await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt));
   }
 }
 
