@@ -1304,6 +1304,102 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
     }
   });
 
+  // ==================== ENGAGEMENT TIMELINE ROUTES ====================
+
+  // Get engagement timeline (activities)
+  app.get("/api/engagements/:id/timeline", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      // All roles can view timeline
+      if (!["owner", "internal_admin", "internal_user", "external_partner", "viewer", "auditor"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const { type, startDate, endDate } = req.query;
+      const filters: { type?: string; startDate?: string; endDate?: string } = {};
+      if (type) filters.type = type as string;
+      if (startDate) filters.startDate = startDate as string;
+      if (endDate) filters.endDate = endDate as string;
+
+      const activities = await storage.getActivitiesByEngagement(req.params.id, filters);
+      res.json(activities);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create engagement timeline entry
+  app.post("/api/engagements/:id/timeline", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      // Only owner, internal_admin, internal_user can add timeline entries
+      if (!["owner", "internal_admin", "internal_user"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const user = await storage.getUser(req.session.userId!);
+      const activity = await storage.createActivity({
+        ...req.body,
+        engagementId: req.params.id,
+        userId: req.session.userId,
+        user: user?.name || "Unknown",
+        date: req.body.date || new Date().toISOString().split('T')[0],
+      });
+
+      // Create audit log entry
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        engagementId: req.params.id,
+        action: "timeline_entry_added",
+        resource: "activity",
+        resourceId: activity.id,
+        details: { type: activity.type, content: activity.content.substring(0, 100) },
+      });
+
+      res.json(activity);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete engagement timeline entry
+  app.delete("/api/engagements/:engagementId/timeline/:activityId", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.engagementId, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!["owner", "internal_admin"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      await storage.deleteActivity(req.params.activityId);
+
+      // Create audit log entry
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        engagementId: req.params.engagementId,
+        action: "timeline_entry_deleted",
+        resource: "activity",
+        resourceId: req.params.activityId,
+        details: {},
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== AUDIT LOG ROUTES ====================
 
   // Get audit logs (admin only for global, or engagement-scoped for members)
