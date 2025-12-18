@@ -10,12 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle } from "lucide-react";
-import { useState, useMemo } from "react";
+import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File } from "lucide-react";
+import { useState, useMemo, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth";
-import type { Engagement, Party, Agreement, User, Activity, activityTypes } from "@shared/schema";
+import { uploadDocument, deleteDocument, getDocumentDownloadUrl } from "@/lib/api";
+import type { Engagement, Party, Agreement, User, Activity, activityTypes, Document } from "@shared/schema";
 
 const userActivityTypes = ["Call", "Email", "LetterSent", "InternalNote", "Meeting", "CourtFiling"] as const;
 
@@ -66,6 +67,10 @@ export default function EngagementDetail() {
   const [newActivityType, setNewActivityType] = useState<string>("InternalNote");
   const [newActivityContent, setNewActivityContent] = useState("");
   const [timelineTypeFilter, setTimelineTypeFilter] = useState<string>("all");
+
+  // Documents state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const { data: engagement, isLoading } = useQuery<Engagement>({
     queryKey: ["/api/engagements", id],
@@ -140,6 +145,17 @@ export default function EngagementDetail() {
     queryKey: ["/api/engagements", id, "timeline"],
     queryFn: async () => {
       const res = await fetch(`/api/engagements/${id}/timeline`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!id
+  });
+
+  // Documents query
+  const { data: engagementDocuments = [] } = useQuery<Document[]>({
+    queryKey: ["/api/engagements", id, "documents"],
+    queryFn: async () => {
+      const res = await fetch(`/api/engagements/${id}/documents`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -316,6 +332,43 @@ export default function EngagementDetail() {
     }
   });
 
+  // Document upload handler
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+
+    setIsUploading(true);
+    try {
+      await uploadDocument({
+        file,
+        engagementId: id,
+        type: file.type.includes("pdf") ? "PDF" : file.type.includes("image") ? "Image" : "Other",
+        category: "Other"
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "documents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "timeline"] });
+      toast({ title: "Document Uploaded" });
+    } catch (error: any) {
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const deleteDocumentMutation = useMutation({
+    mutationFn: async (docId: string) => {
+      await deleteDocument(docId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "documents"] });
+      toast({ title: "Document Deleted" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Delete Failed", description: err.message, variant: "destructive" });
+    }
+  });
+
   // Filtered timeline - must be before early returns to maintain hook order
   const filteredTimeline = useMemo(() => {
     if (timelineTypeFilter === "all") return timeline;
@@ -436,6 +489,10 @@ export default function EngagementDetail() {
           <TabsTrigger value="timeline" data-testid="tab-timeline">
             <Clock className="mr-2 h-4 w-4" />
             Timeline ({timeline.length})
+          </TabsTrigger>
+          <TabsTrigger value="documents" data-testid="tab-documents">
+            <File className="mr-2 h-4 w-4" />
+            Documents ({engagementDocuments.length})
           </TabsTrigger>
         </TabsList>
 
@@ -934,6 +991,105 @@ export default function EngagementDetail() {
                     </div>
                   ))}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="documents">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Documents</CardTitle>
+                <CardDescription>Files and documents attached to this engagement</CardDescription>
+              </div>
+              {canLinkEntities && (
+                <>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    data-testid="button-upload-document"
+                  >
+                    {isUploading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileUp className="mr-2 h-4 w-4" />
+                    )}
+                    Upload Document
+                  </Button>
+                </>
+              )}
+            </CardHeader>
+            <CardContent>
+              {engagementDocuments.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No documents uploaded</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Uploaded</TableHead>
+                      <TableHead className="w-24">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {engagementDocuments.map((doc: Document) => (
+                      <TableRow key={doc.id} data-testid={`document-row-${doc.id}`}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <File className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">{doc.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{doc.type}</Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {doc.category}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {doc.dateUploaded ? format(new Date(doc.dateUploaded), "MMM d, yyyy") : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              asChild
+                            >
+                              <a href={getDocumentDownloadUrl(doc.id)} target="_blank" rel="noopener noreferrer">
+                                <Download className="h-4 w-4" />
+                              </a>
+                            </Button>
+                            {canLinkEntities && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  if (confirm("Delete this document?")) {
+                                    deleteDocumentMutation.mutate(doc.id);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>

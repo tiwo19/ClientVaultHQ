@@ -550,7 +550,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const { agreementId, partyId, type, category, expirationDate, notes } = req.body;
+      const { agreementId, partyId, engagementId, type, category, expirationDate, notes } = req.body;
       let filePath: string;
 
       // Upload to S3 if configured, otherwise save locally
@@ -569,6 +569,7 @@ export async function registerRoutes(
       const docData = {
         agreementId: agreementId || null,
         partyId: partyId || null,
+        engagementId: engagementId || null,
         name: req.file.originalname,
         type: type || "PDF",
         category: category || "Other",
@@ -1416,6 +1417,23 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
       });
 
       res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== ENGAGEMENT DOCUMENTS ROUTES ====================
+
+  // Get documents for an engagement
+  app.get("/api/engagements/:id/documents", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const docs = await storage.getDocumentsByEngagement(req.params.id);
+      res.json(docs);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

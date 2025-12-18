@@ -162,6 +162,7 @@ export const documents = pgTable("documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   agreementId: varchar("agreement_id").references(() => agreements.id, { onDelete: "cascade" }),
   partyId: varchar("party_id").references(() => parties.id, { onDelete: "cascade" }),
+  engagementId: varchar("engagement_id").references(() => engagements.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   type: text("type").notNull(), // PDF, DOCX, Image
   category: text("category").notNull().default("Other"), // Document category

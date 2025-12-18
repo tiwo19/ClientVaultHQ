@@ -57,6 +57,7 @@ export interface IStorage {
   // Documents
   getAllDocuments(): Promise<Document[]>;
   getDocumentsByAgreement(agreementId: string): Promise<Document[]>;
+  getDocumentsByEngagement(engagementId: string): Promise<Document[]>;
   createDocument(doc: InsertDocument): Promise<Document>;
   deleteDocument(id: string): Promise<void>;
 
@@ -256,6 +257,10 @@ export class DbStorage implements IStorage {
 
   async getDocumentsByAgreement(agreementId: string): Promise<Document[]> {
     return await db.select().from(documents).where(eq(documents.agreementId, agreementId));
+  }
+
+  async getDocumentsByEngagement(engagementId: string): Promise<Document[]> {
+    return await db.select().from(documents).where(eq(documents.engagementId, engagementId));
   }
 
   async createDocument(doc: InsertDocument): Promise<Document> {
