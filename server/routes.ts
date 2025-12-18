@@ -1900,6 +1900,274 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
     }
   });
 
+  // ==================== ENGAGEMENT EXPORTS ROUTES ====================
+
+  // Export engagement timeline as CSV
+  app.get("/api/engagements/:id/export/timeline", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      // Only owner, internal_admin, auditor can export
+      if (!["owner", "internal_admin", "auditor"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions to export" });
+      }
+
+      const activities = await storage.getActivitiesByEngagement(req.params.id, {});
+      const engagement = await storage.getEngagement(req.params.id);
+      
+      // Generate CSV
+      const csvHeader = "Date,Type,User,Content\n";
+      const csvRows = activities.map((a: any) => {
+        const date = a.date || "";
+        const type = a.type || "";
+        const user = a.user || "";
+        const content = (a.content || "").replace(/"/g, '""').replace(/\n/g, " ");
+        return `"${date}","${type}","${user}","${content}"`;
+      }).join("\n");
+      
+      const csv = csvHeader + csvRows;
+      const filename = `${engagement?.name || "engagement"}_timeline_${new Date().toISOString().split('T')[0]}.csv`;
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csv);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Export engagement documents list as CSV
+  app.get("/api/engagements/:id/export/documents", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!["owner", "internal_admin", "auditor"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions to export" });
+      }
+
+      const documents = await storage.getDocumentsByEngagement(req.params.id);
+      const engagement = await storage.getEngagement(req.params.id);
+      
+      const csvHeader = "Name,Type,Category,Version,Date Uploaded,Expiration Date,Notes\n";
+      const csvRows = documents.map((d: any) => {
+        const name = (d.name || "").replace(/"/g, '""');
+        const type = d.type || "";
+        const category = d.category || "";
+        const version = d.version || 1;
+        const dateUploaded = d.dateUploaded || "";
+        const expirationDate = d.expirationDate || "";
+        const notes = (d.notes || "").replace(/"/g, '""').replace(/\n/g, " ");
+        return `"${name}","${type}","${category}","${version}","${dateUploaded}","${expirationDate}","${notes}"`;
+      }).join("\n");
+      
+      const csv = csvHeader + csvRows;
+      const filename = `${engagement?.name || "engagement"}_documents_${new Date().toISOString().split('T')[0]}.csv`;
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csv);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Export engagement tasks as CSV
+  app.get("/api/engagements/:id/export/tasks", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!["owner", "internal_admin", "auditor"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions to export" });
+      }
+
+      const taskList = await storage.getTasksByEngagement(req.params.id);
+      const engagement = await storage.getEngagement(req.params.id);
+      const allUsers = await storage.getAllUsers();
+      
+      const csvHeader = "Title,Description,Priority,Status,Due Date,Assignee,Created At,Completed At\n";
+      const csvRows = taskList.map((t: any) => {
+        const title = (t.title || "").replace(/"/g, '""');
+        const description = (t.description || "").replace(/"/g, '""').replace(/\n/g, " ");
+        const priority = t.priority || "";
+        const status = t.status || "";
+        const dueDate = t.dueDate || "";
+        const assignee = allUsers.find((u: any) => u.id === t.assigneeId)?.name || "";
+        const createdAt = t.createdAt ? new Date(t.createdAt).toISOString().split('T')[0] : "";
+        const completedAt = t.completedAt ? new Date(t.completedAt).toISOString().split('T')[0] : "";
+        return `"${title}","${description}","${priority}","${status}","${dueDate}","${assignee}","${createdAt}","${completedAt}"`;
+      }).join("\n");
+      
+      const csv = csvHeader + csvRows;
+      const filename = `${engagement?.name || "engagement"}_tasks_${new Date().toISOString().split('T')[0]}.csv`;
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csv);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Export engagement summary as JSON (can be used for reports)
+  app.get("/api/engagements/:id/export/summary", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!["owner", "internal_admin", "auditor"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions to export" });
+      }
+
+      const engagement = await storage.getEngagement(req.params.id);
+      const members = await storage.getEngagementMemberships(req.params.id);
+      const parties = await storage.getEngagementParties(req.params.id);
+      const agreements = await storage.getEngagementAgreements(req.params.id);
+      const documents = await storage.getDocumentsByEngagement(req.params.id);
+      const tasks = await storage.getTasksByEngagement(req.params.id);
+      const timeline = await storage.getActivitiesByEngagement(req.params.id, {});
+      
+      const summary = {
+        engagement,
+        statistics: {
+          memberCount: members.length,
+          partyCount: parties.length,
+          agreementCount: agreements.length,
+          documentCount: documents.length,
+          taskCount: tasks.length,
+          openTasks: tasks.filter((t: any) => t.status === "Open" || t.status === "InProgress").length,
+          completedTasks: tasks.filter((t: any) => t.status === "Completed").length,
+          timelineEntries: timeline.length
+        },
+        exportedAt: new Date().toISOString(),
+        exportedBy: req.session.userId
+      };
+      
+      const filename = `${engagement?.name || "engagement"}_summary_${new Date().toISOString().split('T')[0]}.json`;
+      
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.json(summary);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== AI ADVISOR ROUTES ====================
+
+  // AI Advisor - analyze engagement and answer questions
+  app.post("/api/engagements/:id/ai-advisor", requireAuth, async (req, res) => {
+    try {
+      const { hasAccess, role } = await getEngagementAccess(req.params.id, req.session.userId!);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      // Only owner, internal_admin, internal_user can use AI advisor
+      if (!["owner", "internal_admin", "internal_user"].includes(role || "")) {
+        return res.status(403).json({ error: "Insufficient permissions to use AI Advisor" });
+      }
+
+      const { question } = req.body;
+      if (!question || typeof question !== "string") {
+        return res.status(400).json({ error: "Question is required" });
+      }
+
+      // Gather engagement context
+      const engagement = await storage.getEngagement(req.params.id);
+      const parties = await storage.getEngagementParties(req.params.id);
+      const agreements = await storage.getEngagementAgreements(req.params.id);
+      const documents = await storage.getDocumentsByEngagement(req.params.id);
+      const tasks = await storage.getTasksByEngagement(req.params.id);
+      const recentTimeline = (await storage.getActivitiesByEngagement(req.params.id, {})).slice(0, 20);
+
+      // Get party and agreement details
+      const partyDetails = await Promise.all(
+        parties.map(async (ep: any) => {
+          const party = await storage.getParty(ep.partyId);
+          return { ...ep, party };
+        })
+      );
+      
+      const agreementDetails = await Promise.all(
+        agreements.map(async (ea: any) => {
+          const agreement = await storage.getAgreement(ea.agreementId);
+          return { ...ea, agreement };
+        })
+      );
+
+      // Build context for AI
+      const context = `
+You are a legal and business advisor helping analyze an engagement/matter. Here is the context:
+
+ENGAGEMENT:
+- Name: ${engagement?.name}
+- Type: ${engagement?.type}
+- Status: ${engagement?.status}
+- Description: ${engagement?.description || "None"}
+- Reference Number: ${engagement?.referenceNumber || "None"}
+
+PARTIES INVOLVED (${partyDetails.length}):
+${partyDetails.map((p: any) => `- ${p.party?.name} (${p.party?.type}) - Role: ${p.roleInEngagement || "Not specified"}`).join("\n")}
+
+AGREEMENTS (${agreementDetails.length}):
+${agreementDetails.map((a: any) => `- ${a.agreement?.title} (${a.agreement?.type}) - Status: ${a.agreement?.status}, Value: ${a.agreement?.currency || ""} ${a.agreement?.amount || "N/A"}`).join("\n")}
+
+DOCUMENTS (${documents.length}):
+${documents.slice(0, 10).map((d: any) => `- ${d.name} (${d.category})`).join("\n")}
+${documents.length > 10 ? `... and ${documents.length - 10} more documents` : ""}
+
+TASKS (${tasks.length}):
+${tasks.map((t: any) => `- [${t.status}] ${t.title} (Priority: ${t.priority}${t.dueDate ? `, Due: ${t.dueDate}` : ""})`).join("\n")}
+
+RECENT TIMELINE (last 20 entries):
+${recentTimeline.map((a: any) => `- ${a.date}: [${a.type}] ${a.content}`).join("\n")}
+`;
+
+      // Call OpenAI
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are a helpful legal and business advisor for a contract management system. Provide clear, actionable insights based on the engagement data. Be concise but thorough. If asked about risks, deadlines, or recommendations, provide specific and practical advice. Format your response in a readable way using markdown.`
+          },
+          {
+            role: "user",
+            content: `${context}\n\nUSER QUESTION: ${question}`
+          }
+        ],
+        max_tokens: 1000,
+        temperature: 0.7
+      });
+
+      const answer = completion.choices[0]?.message?.content || "I couldn't generate a response. Please try again.";
+
+      // Log AI advisor usage
+      await storage.createActivity({
+        engagementId: req.params.id,
+        type: "AIAdvisorQuery",
+        content: `AI Advisor was consulted: "${question.substring(0, 100)}${question.length > 100 ? "..." : ""}"`,
+        userId: req.session.userId,
+        user: (await storage.getUser(req.session.userId!))?.name || "Unknown",
+        date: new Date().toISOString().split('T')[0]
+      });
+
+      res.json({ answer });
+    } catch (error: any) {
+      console.error("AI Advisor error:", error);
+      res.status(500).json({ error: "Failed to get AI advisor response. Please try again." });
+    }
+  });
+
   // ==================== CREDITS & STRIPE ROUTES ====================
 
   app.get("/api/credits", requireAuth, async (req, res) => {
