@@ -15,8 +15,9 @@ import {
   type EngagementParty, type InsertEngagementParty,
   type EngagementAgreement, type InsertEngagementAgreement,
   type AuditLog, type InsertAuditLog,
+  type Task, type InsertTask,
   users, parties, persons, agreements, activities, documents, partyRelationships, creditTransactions,
-  contactPoints, addresses, engagements, engagementMemberships, engagementParties, engagementAgreements, auditLogs
+  contactPoints, addresses, engagements, engagementMemberships, engagementParties, engagementAgreements, auditLogs, tasks
 } from "@shared/schema";
 import { eq, or, and, desc, sql, inArray } from "drizzle-orm";
 
@@ -119,6 +120,13 @@ export interface IStorage {
   // Audit Logs
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
   getAuditLogs(engagementId?: string): Promise<AuditLog[]>;
+
+  // Tasks
+  getTasksByEngagement(engagementId: string): Promise<Task[]>;
+  getTask(id: string): Promise<Task | undefined>;
+  createTask(task: InsertTask): Promise<Task>;
+  updateTask(id: string, task: Partial<InsertTask>): Promise<Task | undefined>;
+  deleteTask(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -558,6 +566,32 @@ export class DbStorage implements IStorage {
         .orderBy(desc(auditLogs.createdAt));
     }
     return await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt));
+  }
+
+  // Tasks
+  async getTasksByEngagement(engagementId: string): Promise<Task[]> {
+    return await db.select().from(tasks)
+      .where(eq(tasks.engagementId, engagementId))
+      .orderBy(desc(tasks.createdAt));
+  }
+
+  async getTask(id: string): Promise<Task | undefined> {
+    const result = await db.select().from(tasks).where(eq(tasks.id, id));
+    return result[0];
+  }
+
+  async createTask(task: InsertTask): Promise<Task> {
+    const result = await db.insert(tasks).values(task).returning();
+    return result[0];
+  }
+
+  async updateTask(id: string, task: Partial<InsertTask>): Promise<Task | undefined> {
+    const result = await db.update(tasks).set(task).where(eq(tasks.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteTask(id: string): Promise<void> {
+    await db.delete(tasks).where(eq(tasks.id, id));
   }
 }
 

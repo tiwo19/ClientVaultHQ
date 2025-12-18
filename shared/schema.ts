@@ -403,3 +403,32 @@ export const auditLogs = pgTable("audit_logs", {
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+// ==================== TASK MANAGEMENT ====================
+
+// Task priorities
+export const taskPriorities = ["Low", "Medium", "High", "Urgent"] as const;
+export type TaskPriority = typeof taskPriorities[number];
+
+// Task statuses
+export const taskStatuses = ["Open", "InProgress", "Completed", "Cancelled"] as const;
+export type TaskStatus = typeof taskStatuses[number];
+
+// Tasks table - action items within engagements
+export const tasks = pgTable("tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  engagementId: varchar("engagement_id").notNull().references(() => engagements.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  priority: text("priority").notNull().default("Medium"), // Low, Medium, High, Urgent
+  status: text("status").notNull().default("Open"), // Open, InProgress, Completed, Cancelled
+  dueDate: text("due_date"), // ISO date string
+  assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, completedAt: true });
+export type InsertTask = z.infer<typeof insertTaskSchema>;
+export type Task = typeof tasks.$inferSelect;
