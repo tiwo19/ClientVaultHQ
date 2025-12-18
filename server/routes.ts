@@ -13,6 +13,8 @@ import OpenAI from "openai";
 import Stripe from "stripe";
 import { prepareForAnalysis, isPreprocessingError } from "./services/documentPreprocessor";
 import { uploadToS3, getSignedDownloadUrl, deleteFromS3, generateS3Key, isS3Configured } from "./services/s3Storage";
+import { enforceGovernance, getEffectivePolicy, previewDecision } from "./middleware/enforceGovernance";
+import { publishPolicy, listPolicyVersions, getPublishedPolicy, createPersona, getAllPersonas, getAIActionsForContext, createApprovalRequest, reviewApproval } from "./governance/registry";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
 
@@ -2054,6 +2056,191 @@ IMPORTANT: The extractedPartyInfo field should contain any party/company informa
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.json(summary);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== GOVERNANCE ROUTES ====================
+
+  // Get effective governance policy for a context
+  app.get("/api/governance/effective", requireAuth, async (req, res) => {
+    try {
+      const { clientId, projectId, artifactId, personaKey } = req.query;
+      
+      const result = await getEffectivePolicy(
+        clientId as string,
+        projectId as string,
+        artifactId as string
+      );
+
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Preview governance decision without side effects
+  app.post("/api/governance/preview", requireAuth, async (req, res) => {
+    try {
+      const { clientId, projectId, artifactId, personaKey, actionType } = req.body;
+      
+      if (!actionType) {
+        return res.status(400).json({ error: "actionType is required" });
+      }
+
+      const result = await previewDecision(
+        clientId,
+        projectId,
+        artifactId,
+        personaKey,
+        actionType,
+        req.session.userId
+      );
+
+      res.json({
+        allow: result.allow,
+        requiresSupervisor: result.requiresSupervisor,
+        reasons: result.reasons
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Publish a governance policy
+  app.post("/api/governance/policies", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.role !== "Admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const { scopeType, scopeId, policyJson } = req.body;
+      
+      if (!scopeType || !policyJson) {
+        return res.status(400).json({ error: "scopeType and policyJson are required" });
+      }
+
+      const result = await publishPolicy(
+        scopeType,
+        scopeId || null,
+        policyJson,
+        req.session.userId!
+      );
+
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // List policy versions for a scope
+  app.get("/api/governance/policies", requireAuth, async (req, res) => {
+    try {
+      const { scopeType, scopeId } = req.query;
+      
+      if (!scopeType) {
+        return res.status(400).json({ error: "scopeType is required" });
+      }
+
+      const versions = await listPolicyVersions(
+        scopeType as string,
+        scopeId as string || null
+      );
+
+      res.json(versions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get AI personas
+  app.get("/api/governance/personas", requireAuth, async (req, res) => {
+    try {
+      const personas = await getAllPersonas();
+      res.json(personas);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create AI persona (admin only)
+  app.post("/api/governance/personas", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.role !== "Admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const { key, name, description, capabilities } = req.body;
+      
+      if (!key || !name) {
+        return res.status(400).json({ error: "key and name are required" });
+      }
+
+      const persona = await createPersona({
+        key,
+        name,
+        description,
+        capabilities: capabilities ? JSON.stringify(capabilities) : undefined
+      });
+
+      res.json(persona);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get AI actions log
+  app.get("/api/ai/actions", requireAuth, async (req, res) => {
+    try {
+      const { clientId, projectId, artifactId } = req.query;
+      
+      const actions = await getAIActionsForContext(
+        clientId as string,
+        projectId as string,
+        artifactId as string
+      );
+
+      res.json(actions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Request supervisor approval
+  app.post("/api/governance/approvals", requireAuth, async (req, res) => {
+    try {
+      const { aiActionsLogId } = req.body;
+      
+      if (!aiActionsLogId) {
+        return res.status(400).json({ error: "aiActionsLogId is required" });
+      }
+
+      const approval = await createApprovalRequest(aiActionsLogId, req.session.userId!);
+      res.json(approval);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Review approval (admin/supervisor only)
+  app.patch("/api/governance/approvals/:id", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (user?.role !== "Admin") {
+        return res.status(403).json({ error: "Admin/Supervisor access required" });
+      }
+
+      const { status, notes } = req.body;
+      
+      if (!status || !["APPROVED", "REJECTED"].includes(status)) {
+        return res.status(400).json({ error: "Valid status (APPROVED/REJECTED) is required" });
+      }
+
+      const approval = await reviewApproval(req.params.id, req.session.userId!, status, notes);
+      res.json(approval);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
