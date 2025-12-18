@@ -179,7 +179,15 @@ Preferred communication style: Simple, everyday language.
 - Phase 1: Engagement workspaces with 6-role RBAC (owner, internal_admin, internal_user, external_partner, viewer, auditor)
 - Phase 2: Unified timeline with type and date filtering, auto-logged system events
 - Phase 3: Document hardening with versioning, RBAC-enforced operations, audit logging
-- Remaining phases: Search+Tasks, Exports+AI Advisor
+- Phase 4: Search + Tasks
+  - Task management within engagements (title, description, priority, status, due date, assignee)
+  - Tasks schema with fields: engagementId, title, description, priority (Low/Medium/High/Urgent), status (Open/InProgress/Completed/Cancelled), dueDate, assigneeId, createdById, completedAt
+  - API endpoints: GET/POST /engagements/:id/tasks, PUT/DELETE /engagements/:engagementId/tasks/:taskId
+  - RBAC enforcement: create/update requires owner/internal_admin/internal_user, delete requires owner/internal_admin
+  - Timeline auto-logging for TaskCreated, TaskCompleted, TaskDeleted events
+  - Tasks tab in EngagementDetail with task list, status toggle, create/delete actions
+  - Global search enhanced to include engagements (by name, description, type, reference number)
+- Remaining: Phase 5 (Exports + AI Advisor)
 
 **Future Considerations:**
 - Session store should use PostgreSQL (connect-pg-simple) or Redis in production
