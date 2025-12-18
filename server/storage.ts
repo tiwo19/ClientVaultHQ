@@ -56,9 +56,12 @@ export interface IStorage {
 
   // Documents
   getAllDocuments(): Promise<Document[]>;
+  getDocument(id: string): Promise<Document | undefined>;
   getDocumentsByAgreement(agreementId: string): Promise<Document[]>;
   getDocumentsByEngagement(engagementId: string): Promise<Document[]>;
+  getDocumentVersions(parentDocumentId: string): Promise<Document[]>;
   createDocument(doc: InsertDocument): Promise<Document>;
+  createDocumentVersion(parentDocumentId: string, doc: InsertDocument): Promise<Document>;
   deleteDocument(id: string): Promise<void>;
 
   // Party Relationships
@@ -255,6 +258,11 @@ export class DbStorage implements IStorage {
     return await db.select().from(documents);
   }
 
+  async getDocument(id: string): Promise<Document | undefined> {
+    const result = await db.select().from(documents).where(eq(documents.id, id));
+    return result[0];
+  }
+
   async getDocumentsByAgreement(agreementId: string): Promise<Document[]> {
     return await db.select().from(documents).where(eq(documents.agreementId, agreementId));
   }
@@ -263,12 +271,42 @@ export class DbStorage implements IStorage {
     return await db.select().from(documents).where(eq(documents.engagementId, engagementId));
   }
 
+  async getDocumentVersions(parentDocumentId: string): Promise<Document[]> {
+    // Get all versions of a document (including the original)
+    const versions = await db.select().from(documents)
+      .where(
+        or(
+          eq(documents.id, parentDocumentId),
+          eq(documents.parentDocumentId, parentDocumentId)
+        )
+      )
+      .orderBy(desc(documents.version));
+    return versions;
+  }
+
   async createDocument(doc: InsertDocument): Promise<Document> {
     const docWithDate = {
       ...doc,
-      dateUploaded: new Date().toISOString()
+      dateUploaded: new Date().toISOString(),
+      version: 1,
+      parentDocumentId: null
     };
     const result = await db.insert(documents).values(docWithDate).returning();
+    return result[0];
+  }
+
+  async createDocumentVersion(parentDocumentId: string, doc: InsertDocument): Promise<Document> {
+    // Get the current max version
+    const versions = await this.getDocumentVersions(parentDocumentId);
+    const maxVersion = Math.max(...versions.map(v => v.version), 0);
+    
+    const docWithVersion = {
+      ...doc,
+      dateUploaded: new Date().toISOString(),
+      version: maxVersion + 1,
+      parentDocumentId
+    };
+    const result = await db.insert(documents).values(docWithVersion).returning();
     return result[0];
   }
 

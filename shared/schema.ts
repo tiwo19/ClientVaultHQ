@@ -170,6 +170,10 @@ export const documents = pgTable("documents", {
   expirationDate: text("expiration_date"), // For documents that expire (licenses, insurance, etc.)
   notes: text("notes"), // Additional notes about the document
   filePath: text("file_path"), // Path to stored file
+  // Versioning fields
+  version: integer("version").notNull().default(1),
+  parentDocumentId: varchar("parent_document_id"), // Links to original document for version chain
+  uploadedById: varchar("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
 });
 
 export const insertDocumentSchema = createInsertSchema(documents).omit({ id: true, dateUploaded: true });
