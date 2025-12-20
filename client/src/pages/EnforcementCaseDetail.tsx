@@ -496,6 +496,7 @@ export default function EnforcementCaseDetail() {
   const [showDefaultConfirm, setShowDefaultConfirm] = useState(false);
   const [showEstoppelConfirm, setShowEstoppelConfirm] = useState(false);
   const [confirmJustification, setConfirmJustification] = useState("");
+  const [showFraudGate, setShowFraudGate] = useState<"default" | "estoppel" | null>(null);
   const [newNotice, setNewNotice] = useState({
     title: "",
     content: "",
@@ -509,6 +510,33 @@ export default function EnforcementCaseDetail() {
     queryKey: [`/api/enforcement/cases/${caseId}`],
     enabled: !!caseId
   });
+
+  const { data: fraudData, isLoading: isFraudLoading } = useQuery<FraudData>({
+    queryKey: [`/api/enforcement/${caseId}/fraud`],
+    enabled: !!caseId
+  });
+
+  const hasFraudGate = fraudData?.assessment && 
+    (fraudData.assessment.thresholdLevel === "elevated" || 
+     fraudData.assessment.thresholdLevel === "referral_ready");
+  
+  const isGateCheckPending = isFraudLoading;
+
+  const handleDeclareDefaultClick = () => {
+    if (hasFraudGate) {
+      setShowFraudGate("default");
+    } else {
+      setShowDefaultConfirm(true);
+    }
+  };
+
+  const handleEstoppelClick = () => {
+    if (hasFraudGate) {
+      setShowFraudGate("estoppel");
+    } else {
+      setShowEstoppelConfirm(true);
+    }
+  };
 
   const createNoticeMutation = useMutation({
     mutationFn: async (data: typeof newNotice & { tier: string }) => {
@@ -824,21 +852,33 @@ export default function EnforcementCaseDetail() {
         {caseData.status === "notice_phase" && (
           <Button 
             variant="destructive" 
-            onClick={() => setShowDefaultConfirm(true)}
+            onClick={handleDeclareDefaultClick}
+            disabled={isGateCheckPending}
             data-testid="button-declare-default"
           >
-            <Gavel className="h-4 w-4 mr-2" />
+            {isGateCheckPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Gavel className="h-4 w-4 mr-2" />
+            )}
             Declare Default
+            {hasFraudGate && <ShieldAlert className="h-4 w-4 ml-2 text-amber-300" />}
           </Button>
         )}
         {caseData.status === "default_declared" && (
           <Button 
             variant="destructive" 
-            onClick={() => setShowEstoppelConfirm(true)}
+            onClick={handleEstoppelClick}
+            disabled={isGateCheckPending}
             data-testid="button-establish-estoppel"
           >
-            <Shield className="h-4 w-4 mr-2" />
+            {isGateCheckPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Shield className="h-4 w-4 mr-2" />
+            )}
             Establish Estoppel
+            {hasFraudGate && <ShieldAlert className="h-4 w-4 ml-2 text-amber-300" />}
           </Button>
         )}
       </div>
@@ -1310,6 +1350,63 @@ export default function EnforcementCaseDetail() {
             >
               {establishEstoppelMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Confirm Estoppel Establishment
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showFraudGate !== null} onOpenChange={() => setShowFraudGate(null)}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+              <ShieldAlert className="h-5 w-5" />
+              Fraud Indicators Detected
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                This case has <strong className={fraudData?.assessment?.thresholdLevel === "referral_ready" ? "text-red-600" : "text-orange-600"}>
+                  {fraudData?.assessment?.thresholdLevel === "referral_ready" ? "Referral Ready" : "Elevated"}
+                </strong> fraud indicator status with a score of <strong>{fraudData?.assessment?.scoreTotal || 0}</strong>.
+              </p>
+              <p>
+                Before proceeding with <strong>{showFraudGate === "default" ? "Default Declaration" : "Estoppel Establishment"}</strong>, 
+                please review the Fraud tab to ensure you have considered all potential fraud patterns identified in this case.
+              </p>
+              {fraudData?.assessment?.thresholdLevel === "referral_ready" && (
+                <p className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
+                  <strong>Important:</strong> At this threshold level, you may want to consider generating a Law Enforcement Referral Packet 
+                  before proceeding with formal enforcement actions.
+                </p>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel onClick={() => setShowFraudGate(null)}>
+              Go Back
+            </AlertDialogCancel>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowFraudGate(null);
+              }}
+              data-testid="button-review-fraud"
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              Review Fraud Tab
+            </Button>
+            <AlertDialogAction
+              onClick={() => {
+                if (showFraudGate === "default") {
+                  setShowFraudGate(null);
+                  setShowDefaultConfirm(true);
+                } else if (showFraudGate === "estoppel") {
+                  setShowFraudGate(null);
+                  setShowEstoppelConfirm(true);
+                }
+              }}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              Acknowledge & Proceed
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
