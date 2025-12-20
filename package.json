@@ -51,6 +51,7 @@
     "@types/bcrypt": "^6.0.0",
     "@types/multer": "^2.0.0",
     "@types/supertest": "^6.0.3",
+    "@workdigital/diagnostics-core": "github:workdigital-git/WorkDigitalDiagnostic#v0.1.1",
     "bcrypt": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
