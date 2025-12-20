@@ -3364,5 +3364,225 @@ ${recentTimeline.map((a: any) => `- ${a.date}: [${a.type}] ${a.content}`).join("
     }
   });
 
+  // ==========================================
+  // FRAUD & CRIMINAL INDICATORS ENGINE
+  // ==========================================
+
+  // Get all fraud indicators catalog
+  app.get("/api/fraud/indicators", requireAuth, async (req, res) => {
+    try {
+      const indicators = await storage.getAllFraudIndicators();
+      res.json(indicators);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Initialize fraud assessment for a case (creates assessment + AI-suggested findings)
+  app.post("/api/enforcement/:caseId/fraud/init", requireAuth, async (req, res) => {
+    try {
+      const { initializeAssessment } = await import("./fraud/aiAnalyst");
+      const result = await initializeAssessment(req.params.caseId, req.session.userId!);
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get fraud assessment for a case (including findings and score)
+  app.get("/api/enforcement/:caseId/fraud", requireAuth, async (req, res) => {
+    try {
+      const assessment = await storage.getFraudAssessmentByCase(req.params.caseId);
+      if (!assessment) {
+        return res.json({ assessment: null, findings: [], indicators: [] });
+      }
+
+      const findings = await storage.getFraudFindingsByAssessment(assessment.id);
+      const indicators = await storage.getAllFraudIndicators();
+
+      // Enrich findings with indicator details
+      const indicatorMap = new Map(indicators.map(i => [i.id, i]));
+      const enrichedFindings = findings.map(f => ({
+        ...f,
+        indicator: indicatorMap.get(f.fraudIndicatorId),
+        observedFacts: f.observedFacts ? JSON.parse(f.observedFacts) : [],
+        openQuestions: f.openQuestions ? JSON.parse(f.openQuestions) : [],
+        evidenceLinks: f.evidenceLinks ? JSON.parse(f.evidenceLinks) : []
+      }));
+
+      res.json({
+        assessment,
+        findings: enrichedFindings,
+        indicators
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create or update a fraud finding
+  app.post("/api/fraud/findings", requireAuth, async (req, res) => {
+    try {
+      const { id, fraudAssessmentId, fraudIndicatorId, confidence, summary, observedFacts, openQuestions, evidenceLinks, active } = req.body;
+
+      if (!fraudAssessmentId || !fraudIndicatorId) {
+        return res.status(400).json({ error: "fraudAssessmentId and fraudIndicatorId are required" });
+      }
+
+      // Get the indicator to validate evidence requirements
+      const indicator = await storage.getFraudIndicator(fraudIndicatorId);
+      if (!indicator) {
+        return res.status(404).json({ error: "Fraud indicator not found" });
+      }
+
+      // Validate evidence links if trying to activate
+      if (active) {
+        const links: Array<{ type: string; id: string }> = evidenceLinks || [];
+        if (links.length === 0) {
+          return res.status(400).json({ 
+            error: "Cannot activate finding without evidence links",
+            requiresEvidence: true
+          });
+        }
+      }
+
+      const findingData = {
+        fraudAssessmentId,
+        fraudIndicatorId,
+        confidence: confidence || "low",
+        summary: summary || null,
+        observedFacts: observedFacts ? JSON.stringify(observedFacts) : null,
+        openQuestions: openQuestions ? JSON.stringify(openQuestions) : null,
+        evidenceLinks: evidenceLinks ? JSON.stringify(evidenceLinks) : null,
+        active: active || false,
+        createdByUserId: req.session.userId!
+      };
+
+      let finding;
+      if (id) {
+        finding = await storage.updateFraudFinding(id, findingData);
+      } else {
+        finding = await storage.createFraudFinding(findingData);
+      }
+
+      // Log timeline event for activation/deactivation
+      if (id) {
+        const assessment = await storage.getFraudAssessment(fraudAssessmentId);
+        if (assessment) {
+          await storage.createEnforcementTimelineEvent({
+            caseId: assessment.enforcementCaseId,
+            eventType: active ? "FraudFindingActivated" : "FraudFindingDeactivated",
+            description: `Fraud finding ${indicator.code} ${active ? "activated" : "deactivated"}`,
+            createdById: req.session.userId!
+          });
+        }
+      }
+
+      res.json(finding);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Recalculate fraud score for an assessment
+  app.post("/api/enforcement/:caseId/fraud/recalc", requireAuth, async (req, res) => {
+    try {
+      const assessment = await storage.getFraudAssessmentByCase(req.params.caseId);
+      if (!assessment) {
+        return res.status(404).json({ error: "No fraud assessment found for this case" });
+      }
+
+      const { recalculateScore } = await import("./fraud/aiAnalyst");
+      const result = await recalculateScore(assessment.id);
+
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "FraudScoreRecalculated",
+        description: `Fraud score recalculated: ${result.scoreTotal} (${result.thresholdLevel})`,
+        createdById: req.session.userId!
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Generate referral packet
+  app.post("/api/enforcement/:caseId/referral/export", requireAuth, async (req, res) => {
+    try {
+      const enfCase = await storage.getEnforcementCase(req.params.caseId);
+      if (!enfCase) {
+        return res.status(404).json({ error: "Enforcement case not found" });
+      }
+
+      const assessment = await storage.getFraudAssessmentByCase(req.params.caseId);
+
+      // Create referral packet record
+      const packet = await storage.createReferralPacket({
+        enforcementCaseId: req.params.caseId,
+        fraudAssessmentId: assessment?.id || null,
+        status: "queued",
+        createdByUserId: req.session.userId!
+      });
+
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "ReferralPacketGenerated",
+        description: "Referral packet generation initiated",
+        createdById: req.session.userId!
+      });
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "generate_referral_packet",
+        entityType: "enforcement_case",
+        entityId: req.params.caseId,
+        metadata: JSON.stringify({ packetId: packet.id, assessmentId: assessment?.id })
+      });
+
+      // For now, just mark as complete with placeholder manifest
+      // In production, this would trigger async PDF/ZIP generation
+      await storage.updateReferralPacket(packet.id, {
+        status: "complete",
+        manifestJson: JSON.stringify({
+          generatedAt: new Date().toISOString(),
+          caseId: req.params.caseId,
+          exhibitCount: 0,
+          sha256: "pending_implementation"
+        })
+      });
+
+      res.json(packet);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get referral packets for a case
+  app.get("/api/enforcement/:caseId/referral/packets", requireAuth, async (req, res) => {
+    try {
+      const packets = await storage.getReferralPacketsByCase(req.params.caseId);
+      res.json(packets);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Delete a fraud finding
+  app.delete("/api/fraud/findings/:id", requireAuth, async (req, res) => {
+    try {
+      const finding = await storage.getFraudFinding(req.params.id);
+      if (!finding) {
+        return res.status(404).json({ error: "Finding not found" });
+      }
+
+      await storage.deleteFraudFinding(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

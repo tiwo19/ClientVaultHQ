@@ -1,0 +1,222 @@
+You are my senior full-stack engineer + compliance architect working inside my Client Vault app.
+
+NEW FEATURE:
+Add an AI-assisted “Contradictions Engine” that detects and documents contradictions between:
+- representations / commitments / promises (what was said/written)
+vs
+- later statements, actions, non-performance, or documentary evidence (what actually occurred)
+
+This engine must be EVIDENCE-BOUND, COURT-READY, and SAFE:
+- It MUST NOT invent facts.
+- It MUST NOT speculate about intent.
+- It MUST NOT accuse or label crimes.
+- It MUST quote only from stored artifacts (documents, messages, transcripts, call transcripts, timeline notes) and must attach exhibit references.
+- It MUST produce a neutral “Observed inconsistency” memo and an optional “Clarification Request” letter that is non-threatening and purely administrative.
+
+PRIMARY OUTCOME:
+For each Enforcement Case, produce a “Contradictions Dossier” that:
+- lists contradictions as pairs of quotes with exhibit IDs
+- includes a short neutral explanation of why the statements cannot both be true (fact-only reasoning)
+- identifies missing evidence needed to resolve the inconsistency
+- supports (a) civil enforcement record and (b) referral packet readiness (internal only)
+
+PART A — DATA MODEL (Drizzle + Postgres)
+
+contradiction_sets
+- id pk
+- tenant_id
+- enforcement_case_id fk
+- status enum: draft | active | escalated | resolved | dismissed
+- score_total int default 0
+- created_by_user_id
+- created_at, updated_at
+
+contradiction_items
+- id pk
+- contradiction_set_id fk
+- contradiction_type enum:
+  performance_commitment_vs_ledger
+  delivery_promise_vs_missing_receipt
+  escrow_claim_vs_no_statement
+  insurance_backing_claim_vs_no_policy
+  identity_role_claim_vs_corporate_record
+  timeline_claim_vs_timestamped_message
+  funds_destination_claim_vs_wire_receipt
+  other
+- title text
+- explanation text               // neutral, factual
+- confidence enum: low | medium | high
+- status enum: candidate | confirmed | needs_more_evidence | resolved | dismissed
+- severity enum: minor | material | critical
+- created_at, updated_at
+
+contradiction_evidence_links
+- id pk
+- contradiction_item_id fk
+- side enum: A | B               // the two inconsistent sides
+- source_type enum: document | message | call_transcript | timeline_event | delivery_proof | ledger_entry
+- source_id text
+- excerpt text                   // short quote (store up to N chars)
+- excerpt_start int nullable     // if we have offsets
+- excerpt_end int nullable
+- occurred_at timestamptz nullable
+- created_at
+
+contradiction_questions
+- id pk
+- contradiction_item_id fk
+- question text
+- required_evidence_type enum: document | statement | receipt | ledger | policy | corporate_filing | other
+- status enum: open | answered | waived
+- created_at, updated_at
+
+contradiction_outputs
+- id pk
+- contradiction_set_id fk
+- output_type enum: internal_memo | clarification_request_letter
+- version int
+- ai_input_snapshot_json jsonb
+- ai_output_text text
+- rendered_pdf_doc_id fk -> documents nullable
+- notarized_pdf_doc_id fk -> documents nullable
+- response_deadline_at timestamptz nullable
+- visibility enum: internal_only | shared
+- status enum: drafted | notarized | sent | closed
+- created_at, updated_at
+
+PART B — EVIDENCE EXTRACTION & INDEXING
+
+1) Ensure all candidate sources are searchable and extractable:
+- Documents: store extracted text (if available) and page references
+- Messages: store normalized message body + timestamps + participants
+- Call transcripts: store transcript text + timestamps
+- Ledger entries: store structured obligations and payments
+- Delivery proofs: store summary and timestamps
+
+2) Implement “Case Evidence Index”:
+server/contradictions/index.ts
+- builds an in-memory index for a given enforcement_case_id:
+  - claims/commitments (look for “will”, “by date”, “guarantee”, “insured”, “escrow”, “paid”, “sent”)
+  - key dates and amounts
+  - funds flow artifacts (wire receipts, statements)
+  - promised updates/addendums
+Store a cached index row if needed:
+case_evidence_index (optional)
+- enforcement_case_id
+- index_json
+- updated_at
+
+PART C — AI CONTRADICTION ANALYST (INTERNAL ONLY)
+
+Implement server/contradictions/aiAnalyst.ts
+
+INPUTS (STRICT):
+- enforcement_case record snapshot (facts)
+- evidence snippets with source IDs, timestamps, and allowed excerpt length
+- DO NOT provide the AI raw unlimited content; provide curated candidate excerpts and metadata.
+
+AI TASK:
+- Propose contradiction candidates by pairing two excerpts that appear inconsistent.
+- For each candidate:
+  - supply side A quote + exhibit reference
+  - supply side B quote + exhibit reference
+  - neutral explanation (why both can’t be true)
+  - list open questions + evidence needed to resolve
+  - confidence + severity
+
+GUARDRAILS:
+- No speculation.
+- No accusations.
+- No legal conclusions.
+- No invented quotes.
+- Output must include ONLY the provided excerpts and references.
+- If uncertain, mark “needs_more_evidence”.
+
+STORE OUTPUT:
+- Save candidates as contradiction_items (status=candidate) with evidence links.
+- Admin must confirm items to mark “confirmed”.
+
+PART D — SCORING + THRESHOLDS
+
+Compute score_total for contradiction_set:
+- minor=2, material=5, critical=10
+- multiplied by confidence: low=1, med=2, high=3
+Only “confirmed” items count unless admin enables “include candidates”.
+
+Thresholds:
+- watch >= 15
+- elevated >= 30
+- critical >= 60
+Use these only for INTERNAL banners and referral readiness suggestions.
+
+PART E — UI
+
+Add Enforcement Case tab: “Contradictions”
+Sections:
+1) Dossier Summary
+- score, counts by severity, last scan time
+- button: “Run AI Scan”
+- button: “Generate Internal Memo”
+- button: “Generate Clarification Request Letter” (external-facing; neutral)
+
+2) Contradiction Items Table
+- title, type, severity, confidence, status
+- quick actions: confirm, dismiss, needs more evidence, resolved
+
+3) Item Detail Drawer
+- Side A quote + source link + timestamp
+- Side B quote + source link + timestamp
+- explanation (neutral)
+- open questions with “create task” button
+- attach additional evidence links
+
+PART F — OUTPUT GENERATION
+
+1) Internal Memo Output (internal_only)
+Generate a “Contradictions Dossier Memo” containing:
+- brief factual summary
+- list of confirmed contradictions:
+  - Side A quote with exhibit ref (doc id/page if available)
+  - Side B quote with exhibit ref
+  - neutral explanation
+  - open questions / missing evidence
+- No accusations, no legal conclusions
+Store as contradiction_outputs with rendered PDF.
+
+2) Clarification Request Letter (external-facing; optional)
+Generate a notarizable letter that:
+- lists each contradiction as “Observed inconsistency requiring clarification”
+- includes the two quotes + references
+- requests a written clarification and supporting documents by a deadline
+- neutral tone, no threats
+- notarization block placeholder
+Store as contradiction_outputs (visibility=shared) and link into enforcement timeline.
+
+PART G — WORKFLOW INTEGRATION (“Integrity Gates”)
+
+Before “Declare Default” or “Establish Estoppel”, display an internal gate:
+- if contradictions threshold elevated/critical:
+  - recommend generating internal memo + clarification request letter
+  - recommend locking evidence and generating referral packet (internal)
+Allow admin override; log to audit_log.
+
+PART H — TESTS
+
+- AI outputs cannot be saved unless evidence_links reference real source IDs.
+- Excerpt length limits enforced.
+- Clarification letters contain no prohibited language (threats/accusations).
+- Deterministic scoring and threshold calculations.
+- External users cannot view internal-only memos/contradiction candidates by default.
+
+IMPLEMENTATION ORDER
+1) Schema + migrations
+2) Evidence indexing module
+3) AI analyst (candidate generator) + persistence
+4) UI tab + item management
+5) Memo generator + PDF render
+6) Clarification request letter generator + notarization + send tracking
+7) Workflow gates + audit logs
+8) Tests + seed data
+
+START NOW:
+Implement schema + Contradictions UI skeleton, then build the evidence index and AI candidate generator.

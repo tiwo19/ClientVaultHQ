@@ -24,10 +24,16 @@ import {
   type EnforcementAffidavit, type InsertEnforcementAffidavit,
   type EnforcementDeliveryProof, type InsertEnforcementDeliveryProof,
   type EvidenceExport, type InsertEvidenceExport,
+  type FraudIndicator, type InsertFraudIndicator,
+  type FraudAssessment, type InsertFraudAssessment,
+  type FraudFinding, type InsertFraudFinding,
+  type ReferralPacket, type InsertReferralPacket,
+  type EntityGraphEdge, type InsertEntityGraphEdge,
   users, parties, persons, agreements, activities, documents, partyRelationships, creditTransactions,
   contactPoints, addresses, engagements, engagementMemberships, engagementParties, engagementAgreements, auditLogs, tasks,
   enforcementCases, enforcementNotices, enforcementDocuments, enforcementResponses, enforcementTimeline,
-  enforcementAffidavits, enforcementDeliveryProofs, evidenceExports
+  enforcementAffidavits, enforcementDeliveryProofs, evidenceExports,
+  fraudIndicators, fraudAssessments, fraudFindings, referralPackets, entityGraphEdges
 } from "@shared/schema";
 import { eq, or, and, desc, sql, inArray } from "drizzle-orm";
 
@@ -872,6 +878,149 @@ export class DbStorage implements IStorage {
       .where(eq(evidenceExports.id, id))
       .returning();
     return result[0];
+  }
+
+  // ==========================================
+  // FRAUD & CRIMINAL INDICATORS ENGINE
+  // ==========================================
+
+  // Fraud Indicators (catalog)
+  async getAllFraudIndicators(): Promise<FraudIndicator[]> {
+    return await db.select().from(fraudIndicators);
+  }
+
+  async getFraudIndicator(id: string): Promise<FraudIndicator | undefined> {
+    const result = await db.select().from(fraudIndicators).where(eq(fraudIndicators.id, id));
+    return result[0];
+  }
+
+  async getFraudIndicatorByCode(code: string): Promise<FraudIndicator | undefined> {
+    const result = await db.select().from(fraudIndicators).where(eq(fraudIndicators.code, code));
+    return result[0];
+  }
+
+  async createFraudIndicator(indicator: InsertFraudIndicator): Promise<FraudIndicator> {
+    const result = await db.insert(fraudIndicators).values(indicator).returning();
+    return result[0];
+  }
+
+  async upsertFraudIndicator(indicator: InsertFraudIndicator): Promise<FraudIndicator> {
+    const existing = await this.getFraudIndicatorByCode(indicator.code);
+    if (existing) {
+      const result = await db.update(fraudIndicators)
+        .set(indicator)
+        .where(eq(fraudIndicators.id, existing.id))
+        .returning();
+      return result[0];
+    }
+    return this.createFraudIndicator(indicator);
+  }
+
+  // Fraud Assessments
+  async getFraudAssessment(id: string): Promise<FraudAssessment | undefined> {
+    const result = await db.select().from(fraudAssessments).where(eq(fraudAssessments.id, id));
+    return result[0];
+  }
+
+  async getFraudAssessmentByCase(caseId: string): Promise<FraudAssessment | undefined> {
+    const result = await db.select().from(fraudAssessments)
+      .where(eq(fraudAssessments.enforcementCaseId, caseId))
+      .orderBy(desc(fraudAssessments.version))
+      .limit(1);
+    return result[0];
+  }
+
+  async createFraudAssessment(assessment: InsertFraudAssessment): Promise<FraudAssessment> {
+    const result = await db.insert(fraudAssessments).values(assessment).returning();
+    return result[0];
+  }
+
+  async updateFraudAssessment(id: string, assessment: Partial<InsertFraudAssessment>): Promise<FraudAssessment | undefined> {
+    const result = await db.update(fraudAssessments)
+      .set({ ...assessment, updatedAt: new Date() })
+      .where(eq(fraudAssessments.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Fraud Findings
+  async getFraudFindingsByAssessment(assessmentId: string): Promise<FraudFinding[]> {
+    return await db.select().from(fraudFindings)
+      .where(eq(fraudFindings.fraudAssessmentId, assessmentId))
+      .orderBy(desc(fraudFindings.createdAt));
+  }
+
+  async getFraudFinding(id: string): Promise<FraudFinding | undefined> {
+    const result = await db.select().from(fraudFindings).where(eq(fraudFindings.id, id));
+    return result[0];
+  }
+
+  async createFraudFinding(finding: InsertFraudFinding): Promise<FraudFinding> {
+    const result = await db.insert(fraudFindings).values(finding).returning();
+    return result[0];
+  }
+
+  async updateFraudFinding(id: string, finding: Partial<InsertFraudFinding>): Promise<FraudFinding | undefined> {
+    const result = await db.update(fraudFindings)
+      .set({ ...finding, updatedAt: new Date() })
+      .where(eq(fraudFindings.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteFraudFinding(id: string): Promise<void> {
+    await db.delete(fraudFindings).where(eq(fraudFindings.id, id));
+  }
+
+  async getActiveFraudFindings(assessmentId: string): Promise<FraudFinding[]> {
+    return await db.select().from(fraudFindings)
+      .where(and(
+        eq(fraudFindings.fraudAssessmentId, assessmentId),
+        eq(fraudFindings.active, true)
+      ));
+  }
+
+  // Referral Packets
+  async getReferralPacketsByCase(caseId: string): Promise<ReferralPacket[]> {
+    return await db.select().from(referralPackets)
+      .where(eq(referralPackets.enforcementCaseId, caseId))
+      .orderBy(desc(referralPackets.createdAt));
+  }
+
+  async getReferralPacket(id: string): Promise<ReferralPacket | undefined> {
+    const result = await db.select().from(referralPackets).where(eq(referralPackets.id, id));
+    return result[0];
+  }
+
+  async createReferralPacket(packet: InsertReferralPacket): Promise<ReferralPacket> {
+    const result = await db.insert(referralPackets).values(packet).returning();
+    return result[0];
+  }
+
+  async updateReferralPacket(id: string, packet: Partial<InsertReferralPacket>): Promise<ReferralPacket | undefined> {
+    const result = await db.update(referralPackets)
+      .set({ ...packet, updatedAt: new Date() })
+      .where(eq(referralPackets.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Entity Graph Edges (for pattern detection)
+  async getEntityGraphEdges(entityType: string, entityId: string): Promise<EntityGraphEdge[]> {
+    return await db.select().from(entityGraphEdges)
+      .where(or(
+        and(eq(entityGraphEdges.entityTypeA, entityType), eq(entityGraphEdges.entityIdA, entityId)),
+        and(eq(entityGraphEdges.entityTypeB, entityType), eq(entityGraphEdges.entityIdB, entityId))
+      ));
+  }
+
+  async createEntityGraphEdge(edge: InsertEntityGraphEdge): Promise<EntityGraphEdge> {
+    const result = await db.insert(entityGraphEdges).values(edge).returning();
+    return result[0];
+  }
+
+  async deleteEntityGraphEdge(id: string): Promise<void> {
+    await db.delete(entityGraphEdges).where(eq(entityGraphEdges.id, id));
   }
 }
 

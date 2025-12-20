@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedGovernanceData } from "./governance/seed";
+import { seedFraudIndicators } from "./fraud/seed";
 
 const app = express();
 const httpServer = createServer(app);
@@ -68,6 +69,13 @@ app.use((req, res, next) => {
     await seedGovernanceData();
   } catch (error) {
     console.error("Failed to seed governance data:", error);
+  }
+
+  // Seed fraud indicators catalog
+  try {
+    await seedFraudIndicators();
+  } catch (error) {
+    console.error("Failed to seed fraud indicators:", error);
   }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

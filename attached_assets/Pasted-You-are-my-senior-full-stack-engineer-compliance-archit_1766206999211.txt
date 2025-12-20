@@ -1,0 +1,359 @@
+You are my senior full-stack engineer + compliance architect working inside my Client Vault app.
+
+OBJECTIVE
+Transform Client Vault into an iron-clad evidence system for high-risk deals:
+1) Pattern Detection (cross-case entity graph + clustering)
+2) Mandatory Missing-Info Enforcement (documents, receipts, statements, addendums, promised updates)
+3) Mandatory Party KYC/KYB (CIS-style identity + business verification requirements)
+4) Attorney/Paymaster Accountability (required fiduciary deliverables + deficiency notices + escalation packets)
+5) Unlicensed-Role Risk Flags (internal-only; evidence-bound)
+6) Referral Readiness (State AG, regulators, police reports) via factual referral packets, not threats
+7) Immutable evidence: hashes, locks, reproducible exports
+
+SAFETY / COMPLIANCE GUARDRAILS (NON-NEGOTIABLE)
+- No external-facing output may accuse anyone of criminal conduct.
+- No threats. No intimidation language. No “reporting threats.”
+- External letters are ONLY: factual requests for missing information, administrative notices, cure opportunities.
+- Any “criminal/regulatory” language is INTERNAL-ONLY evaluation and referral readiness.
+- AI is fact-bound: must not invent facts; must cite linked evidence IDs; must list “unknowns” explicitly.
+
+PART 1 — PATTERN DETECTION LAYER (ENTITY GRAPH)
+
+A) DATA MODEL (Drizzle + Postgres)
+Add tables:
+
+entities
+- id pk
+- tenant_id
+- entity_type enum: party | person | email | phone | address | domain | bank_account | routing | account_number | wallet | company_reg | attorney_bar | insurer_policy | ip | device_fingerprint
+- normalized_value text
+- display_value text
+- created_at
+
+entity_links
+- id pk
+- tenant_id
+- entity_id_a fk -> entities
+- entity_id_b fk -> entities
+- relationship_type enum:
+  belongs_to | uses | same_as | shares_with | paid_to | paid_from | signed_by | represented_by | contacted_via | delivered_to | insured_by | hosted_on | banked_with
+- source_type enum: document | timeline_event | message | call | manual
+- source_id text
+- confidence enum: low | medium | high
+- created_at
+
+entity_observations
+- id pk
+- tenant_id
+- entity_id fk -> entities
+- observation_type enum:
+  extracted | user_entered | verified | unverified | disputed
+- source_type, source_id
+- created_at
+
+pattern_clusters
+- id pk
+- tenant_id
+- cluster_key text (hash)
+- cluster_type enum: shared_contact | shared_bank | shared_domain | shared_address | shared_identity | multi_case_actor
+- score int
+- created_at, updated_at
+
+pattern_cluster_members
+- id pk
+- cluster_id fk
+- entity_id fk
+- created_at
+
+case_pattern_hits
+- id pk
+- enforcement_case_id fk
+- cluster_id fk
+- severity enum: watch | elevated | critical
+- summary text (facts only)
+- created_at
+
+B) EXTRACTION / NORMALIZATION PIPELINE
+Implement server/pattern/extract.ts to normalize entities from:
+- Party/person forms (emails/phones/addresses)
+- Document text extracts (contracts, wires, invoices)
+- Delivery proofs (addresses, tracking)
+- Messages/calls metadata (phones/emails)
+Normalization rules:
+- emails lowercased, trimmed
+- phones E.164 normalized
+- addresses normalized (basic)
+- bank/routing/account numbers stored with masking for display; full stored encrypted at rest if present
+
+C) CLUSTERING LOGIC
+Implement server/pattern/cluster.ts
+- Create clusters when same normalized entity appears across 2+ enforcement cases OR 2+ engagements
+- Score based on:
+  number of cases linked
+  severity of linked findings (from fraud indicators)
+  sensitive entities (bank/routing/account) weight higher
+- Update clusters incrementally on new evidence ingestion
+
+D) UI
+Add “Patterns” section:
+1) Global Patterns Dashboard
+- clusters list with type, score, #cases linked
+- filters: cluster type, score threshold, date, entity type
+2) Enforcement Case -> “Patterns” tab
+- shows case_pattern_hits
+- provides linked entities + source citations (document IDs, event IDs)
+
+PART 2 — MISSING INFORMATION ENFORCEMENT (DOCUMENT DEFICIENCY ENGINE)
+
+A) CONCEPT
+For each enforcement case + agreement, define REQUIRED ARTIFACTS:
+- wire receipts
+- account statements
+- promised updates
+- contract addendums
+- insurance/escrow documents if referenced
+- payoff schedules, ledgers, confirmations
+Missing artifacts are a “bellwether” and must trigger:
+- deficiency flags
+- tasks
+- a factual notarizable request letter (non-threatening)
+- timeline event and deadline tracking
+
+B) DATA MODEL
+required_artifact_rules (catalog)
+- id pk
+- rule_code text (WIRE_RECEIPT, BANK_STATEMENT, ADDENDUM, ESCROW_CONFIRMATION, INSURANCE_PROOF, PERFORMANCE_REPORT, PAYMASTER_CONFIRMATION, ID_DOCS, KYB_DOCS, BAR_INFO, etc.)
+- applies_to enum: enforcement_case | agreement | party_role | attorney_role
+- description text
+- required boolean default true
+- default_deadline_days int
+- letter_section_title text
+
+case_artifact_requirements
+- id pk
+- enforcement_case_id fk
+- rule_id fk
+- status enum: required | received | waived | not_applicable
+- due_at timestamptz
+- satisfied_by_doc_id fk -> documents nullable
+- notes text
+- created_at, updated_at
+
+deficiency_letters
+- id pk
+- enforcement_case_id fk
+- letter_type enum: missing_documents | missing_party_info | attorney_deficiency | licensing_verification_request
+- version int
+- ai_input_snapshot_json jsonb
+- ai_output_text text
+- rendered_pdf_doc_id fk -> documents
+- notarized_pdf_doc_id fk -> documents nullable
+- response_deadline_at timestamptz
+- status enum: drafted | notarized | sent | deadline_expired | cured
+- created_at, updated_at
+
+C) LOGIC
+Implement server/deficiency/compute.ts
+- Determine missing requirements (status=required, satisfied_by_doc_id is null, due_at <= now or due_at is set)
+- Generate a point-by-point deficiency list
+- Create tasks automatically
+- Provide “Generate Deficiency Letter” action
+
+D) AI LETTER AUTHORING (FACT-BOUND)
+Implement server/deficiency/aiAuthor.ts
+External-facing letter MUST:
+- list missing items as bullet points with explicit identifiers (what, timeframe, why required per agreement reference)
+- request delivery method (upload to vault or send to address)
+- set a clear deadline
+- neutral tone; no accusations; no threats
+- include notarization block placeholder
+- include “reservation of rights” neutral clause
+- must cite internal exhibit IDs in a “Reference Index” section (e.g., Agreement Doc ID, prior notice IDs)
+
+PART 3 — PARTY KYC/KYB (CIS-STYLE) REQUIREMENTS
+
+A) REQUIREMENTS
+Implement “Party Compliance Profile” per party:
+Individuals (KYC):
+- full legal name
+- DOB (optional, sensitive: store securely)
+- residential address
+- phone + email
+- government ID (upload)
+- signature specimen (optional)
+Businesses (KYB):
+- legal name
+- entity type
+- state of formation
+- registered agent
+- principal address
+- beneficial owner(s) list (if required)
+- signing authority proof
+- W-9/W-8 (optional)
+- proof of good standing (optional)
+
+B) DATA MODEL
+party_compliance_profiles
+- id pk
+- party_id fk
+- profile_type enum: individual | business
+- fields_json (jsonb)
+- status enum: incomplete | pending_review | complete | failed
+- missing_fields_json (jsonb)
+- created_at, updated_at
+
+party_compliance_requests
+- id pk
+- party_id fk
+- enforcement_case_id fk nullable
+- request_type enum: kyc_request | kyb_request | cis_update
+- deadline_at
+- deficiency_letter_id fk -> deficiency_letters nullable
+- status enum: drafted | sent | satisfied | expired
+- created_at, updated_at
+
+C) UI
+Add per Party: “Compliance” tab showing checklist + missing fields + upload slots.
+Add enforcement case gate: “KYC/KYB complete?” with deficiency letter generator.
+
+PART 4 — ATTORNEY / PAYMASTER ACCOUNTABILITY
+
+A) PURPOSE
+Track counsel/paymasters involved, their required info, and required deliverables:
+- full name, firm, address, phone, email
+- bar number/state (if applicable) OR “not provided”
+- role: counsel, escrow agent, paymaster, trustee, etc.
+- deliverables: escrow statement, trust accounting, confirmation letters, disbursement records, client ledger, notices forwarded
+
+B) DATA MODEL
+professional_roles
+- id pk
+- enforcement_case_id fk
+- party_id fk (the professional or firm)
+- role_type enum: attorney | paymaster | escrow_agent | trustee | broker | agent
+- license_state text nullable
+- license_id text nullable
+- contact_json jsonb
+- status enum: active | inactive | unknown
+- created_at, updated_at
+
+professional_deliverable_rules (catalog)
+- id pk
+- role_type
+- rule_code (ESCROW_LEDGER, DISBURSEMENT_RECEIPTS, TRUST_ACCOUNTING, CLIENT_LEDGER, NOTICE_FORWARD_CONFIRMATION, etc.)
+- description
+- default_deadline_days
+
+professional_case_deliverables
+- id pk
+- professional_role_id fk
+- rule_id fk
+- status enum: required | received | waived | not_applicable
+- due_at
+- satisfied_by_doc_id fk -> documents nullable
+- created_at, updated_at
+
+C) DEFICIENCY NOTICES (EXTERNAL, NEUTRAL)
+Generate “Professional Deficiency Notice” letters that:
+- request missing deliverables (point-by-point)
+- cite role and engagement context
+- deadline
+- neutral tone
+- no threats; no accusations
+- notarization option
+Also generate “Internal Escalation Packet” (facts + exhibits) if needed.
+
+PART 5 — UNLICENSED ROLE RISK FLAGS (INTERNAL ONLY)
+
+A) OBJECTIVE
+Flag risk when someone appears to be contracting for activities that may require licensure (e.g., broker/trader/solicitation).
+This is NOT a conclusion; it is an internal “verify licensing” task.
+
+B) DATA MODEL
+licensure_flags
+- id pk
+- enforcement_case_id fk
+- party_id fk
+- claimed_role text
+- concern_category enum: securities | commodities | broker | investment_adviser | insurance | escrow | other
+- evidence_links jsonb (must exist)
+- status enum: verify_needed | verified | unresolved
+- created_at, updated_at
+
+C) OUTPUTS
+- Internal-only alert and checklist
+- Optional external “Licensing Verification Request” letter that simply requests:
+  - license number
+  - issuing authority
+  - proof of licensure/appointment
+  - deadline
+Neutral, non-accusatory.
+
+PART 6 — REFERRAL OPTIONS (STATE AG / REGULATORS / POLICE) — PACKET ONLY
+
+A) IMPORTANT RULE
+System generates “Referral Readiness Packets” only (facts + exhibits). It does not advise you to file, and it never threatens a party with reporting.
+
+B) Implement referral_packets enhancements
+Add referral_type enum:
+- state_ag | regulator | law_enforcement | insurer_eo | professional_conduct | internal_counsel
+
+Packet contents (facts only):
+- Executive summary
+- Chronology
+- Specific representations (quoted with exhibit refs)
+- Missing receipts / non-cooperation record
+- Funds flow evidence (if available)
+- Exhibit index + hashes
+- Chain-of-custody
+
+PART 7 — WORKFLOW GATES & AUTOMATION
+
+Add “Integrity Gates” to Enforcement flow:
+- Before Default or Estoppel:
+  - Missing artifacts? prompt to generate deficiency letter + tasks
+  - KYC/KYB incomplete? prompt to generate request
+  - Professional deliverables missing? prompt to generate deficiency notice
+  - Pattern hits critical? show internal banner + suggest referral packet generation (no autopilot)
+All gates are recommendations; admin can override with logged reason.
+
+PART 8 — UI CHANGES
+
+A) New global sections:
+- Patterns
+- Compliance
+- Professionals
+
+B) Enforcement Case tabs:
+- Overview
+- Notices
+- Deficiencies (Missing Docs)
+- Party Compliance (KYC/KYB)
+- Professionals
+- Licensure (internal)
+- Patterns
+- Fraud/Indicators
+- Referral Packets
+- Exports
+- Timeline
+
+PART 9 — TESTS
+- Evidence requirement enforcement (cannot activate flags without evidence links)
+- Deficiency letter bullet list matches missing requirements exactly
+- Cluster generation deterministic
+- Permission gates (external cannot see internal tabs by default)
+- Export manifest reproducibility
+
+IMPLEMENTATION ORDER
+1) Schema + migrations
+2) Entity extraction + links + clustering (Pattern Detection)
+3) Artifact requirements + deficiency compute + letter generator
+4) Party compliance profiles + request letters
+5) Professional roles + deliverables + deficiency notices
+6) Licensure flags + verification request letters
+7) Referral packets generator (facts + exhibits)
+8) UI wiring + gates + audit logs
+9) Tests + seed data
+
+START NOW:
+Implement schema + basic UI skeleton for Patterns + Deficiencies + Compliance tabs, then wire compute routes.

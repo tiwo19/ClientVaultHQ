@@ -735,7 +735,12 @@ export const enforcementTimelineEventTypes = [
   "evidence_locked",
   "status_changed",
   "admin_override",
-  "admin_note"
+  "admin_note",
+  "FraudAssessmentInitiated",
+  "FraudFindingActivated",
+  "FraudFindingDeactivated",
+  "FraudScoreRecalculated",
+  "ReferralPacketGenerated"
 ] as const;
 export type EnforcementTimelineEventType = typeof enforcementTimelineEventTypes[number];
 
@@ -929,3 +934,163 @@ export const aiNoticeTypes = [
   "affidavit_silence"
 ] as const;
 export type AINoticeType = typeof aiNoticeTypes[number];
+
+// ==========================================
+// FRAUD & CRIMINAL INDICATORS ENGINE
+// ==========================================
+
+// Fraud indicator categories
+export const fraudIndicatorCategories = [
+  "identity",
+  "misrepresentation",
+  "funds_flow",
+  "communications",
+  "insurance",
+  "regulatory",
+  "pattern"
+] as const;
+export type FraudIndicatorCategory = typeof fraudIndicatorCategories[number];
+
+// Fraud Indicators catalog (system-wide reference)
+export const fraudIndicators = pgTable("fraud_indicators", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: text("code").notNull().unique(), // e.g., MISREP_INDUCEMENT, WIRE_REDIRECT
+  category: text("category").notNull(), // identity, misrepresentation, funds_flow, etc.
+  description: text("description").notNull(),
+  severityWeight: integer("severity_weight").notNull().default(1),
+  requiredEvidenceTypes: text("required_evidence_types"), // JSON array of evidence types
+});
+
+export const insertFraudIndicatorSchema = createInsertSchema(fraudIndicators).omit({ id: true });
+export type InsertFraudIndicator = z.infer<typeof insertFraudIndicatorSchema>;
+export type FraudIndicator = typeof fraudIndicators.$inferSelect;
+
+// Fraud assessment statuses
+export const fraudAssessmentStatuses = [
+  "draft",
+  "active",
+  "escalated",
+  "closed"
+] as const;
+export type FraudAssessmentStatus = typeof fraudAssessmentStatuses[number];
+
+// Fraud threshold levels
+export const fraudThresholdLevels = [
+  "none",
+  "watch",
+  "elevated",
+  "referral_ready"
+] as const;
+export type FraudThresholdLevel = typeof fraudThresholdLevels[number];
+
+// Fraud Assessments (per enforcement case, versioned)
+export const fraudAssessments = pgTable("fraud_assessments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enforcementCaseId: varchar("enforcement_case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  version: integer("version").notNull().default(1),
+  status: text("status").notNull().default("draft"), // draft, active, escalated, closed
+  scoreTotal: integer("score_total").notNull().default(0),
+  thresholdLevel: text("threshold_level").notNull().default("none"), // none, watch, elevated, referral_ready
+  createdByUserId: varchar("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFraudAssessmentSchema = createInsertSchema(fraudAssessments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFraudAssessment = z.infer<typeof insertFraudAssessmentSchema>;
+export type FraudAssessment = typeof fraudAssessments.$inferSelect;
+
+// Fraud finding confidence levels
+export const fraudFindingConfidenceLevels = [
+  "low",
+  "medium",
+  "high"
+] as const;
+export type FraudFindingConfidence = typeof fraudFindingConfidenceLevels[number];
+
+// Fraud Findings (case-specific findings)
+export const fraudFindings = pgTable("fraud_findings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fraudAssessmentId: varchar("fraud_assessment_id").notNull().references(() => fraudAssessments.id, { onDelete: "cascade" }),
+  fraudIndicatorId: varchar("fraud_indicator_id").notNull().references(() => fraudIndicators.id, { onDelete: "cascade" }),
+  confidence: text("confidence").notNull().default("low"), // low, medium, high
+  summary: text("summary"),
+  observedFacts: text("observed_facts"), // JSON array of bullet facts
+  openQuestions: text("open_questions"), // JSON array of questions
+  evidenceLinks: text("evidence_links"), // JSON array of {type, id}
+  active: boolean("active").notNull().default(false),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFraudFindingSchema = createInsertSchema(fraudFindings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFraudFinding = z.infer<typeof insertFraudFindingSchema>;
+export type FraudFinding = typeof fraudFindings.$inferSelect;
+
+// Referral packet statuses
+export const referralPacketStatuses = [
+  "queued",
+  "generating",
+  "complete",
+  "failed"
+] as const;
+export type ReferralPacketStatus = typeof referralPacketStatuses[number];
+
+// Referral Packets
+export const referralPackets = pgTable("referral_packets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enforcementCaseId: varchar("enforcement_case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  fraudAssessmentId: varchar("fraud_assessment_id").references(() => fraudAssessments.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("queued"), // queued, generating, complete, failed
+  packetPdfDocId: varchar("packet_pdf_doc_id").references(() => enforcementDocuments.id, { onDelete: "set null" }),
+  packetZipDocId: varchar("packet_zip_doc_id").references(() => enforcementDocuments.id, { onDelete: "set null" }),
+  manifestJson: text("manifest_json"), // JSON with hashes + exhibit index
+  createdByUserId: varchar("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertReferralPacketSchema = createInsertSchema(referralPackets).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertReferralPacket = z.infer<typeof insertReferralPacketSchema>;
+export type ReferralPacket = typeof referralPackets.$inferSelect;
+
+// Entity graph relationship types (for pattern detection)
+export const entityRelationshipTypes = [
+  "shared_email",
+  "shared_phone",
+  "shared_domain",
+  "shared_bank",
+  "same_address",
+  "same_signatory",
+  "same_beneficiary",
+  "corporate_affiliate"
+] as const;
+export type EntityRelationshipType = typeof entityRelationshipTypes[number];
+
+// Entity types for graph
+export const entityGraphTypes = [
+  "party",
+  "person",
+  "email",
+  "phone",
+  "bank_account",
+  "domain",
+  "address"
+] as const;
+export type EntityGraphType = typeof entityGraphTypes[number];
+
+// Entity Graph Edges (for pattern detection)
+export const entityGraphEdges = pgTable("entity_graph_edges", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  entityTypeA: text("entity_type_a").notNull(), // party, person, email, phone, bank_account, domain
+  entityIdA: varchar("entity_id_a").notNull(),
+  entityTypeB: text("entity_type_b").notNull(),
+  entityIdB: varchar("entity_id_b").notNull(),
+  relationshipType: text("relationship_type").notNull(), // shared_email, shared_phone, etc.
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEntityGraphEdgeSchema = createInsertSchema(entityGraphEdges).omit({ id: true, createdAt: true });
+export type InsertEntityGraphEdge = z.infer<typeof insertEntityGraphEdgeSchema>;
+export type EntityGraphEdge = typeof entityGraphEdges.$inferSelect;
