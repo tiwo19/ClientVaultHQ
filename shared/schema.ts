@@ -540,3 +540,234 @@ export const governanceApprovals = pgTable("governance_approvals", {
 export const insertGovernanceApprovalSchema = createInsertSchema(governanceApprovals).omit({ id: true, createdAt: true });
 export type InsertGovernanceApproval = z.infer<typeof insertGovernanceApprovalSchema>;
 export type GovernanceApproval = typeof governanceApprovals.$inferSelect;
+
+// ==================== ENFORCEMENT ENGINE ====================
+
+// Enforcement case statuses (lifecycle)
+export const enforcementStatuses = [
+  "monitoring",
+  "notice_phase",
+  "default_declared",
+  "estoppel_established",
+  "litigation_ready",
+  "resolved"
+] as const;
+export type EnforcementStatus = typeof enforcementStatuses[number];
+
+// Notice tier levels (mandatory sequence)
+export const noticeTiers = [
+  "tier1_administrative",    // Administrative Notice of Record
+  "tier2_opportunity",       // Notice of Opportunity to Cure
+  "tier3_default",          // Notice of Default & Demand
+  "tier4_estoppel"          // Notice of Estoppel & Administrative Determination
+] as const;
+export type NoticeTier = typeof noticeTiers[number];
+
+// Notice status
+export const noticeStatuses = [
+  "draft",
+  "pending_notarization",
+  "notarized",
+  "sent",
+  "delivered",
+  "deadline_active",
+  "deadline_expired",
+  "superseded"
+] as const;
+export type NoticeStatus = typeof noticeStatuses[number];
+
+// Delivery methods
+export const deliveryMethods = [
+  "certified_mail",
+  "registered_mail",
+  "email",
+  "courier",
+  "personal_service",
+  "publication"
+] as const;
+export type DeliveryMethod = typeof deliveryMethods[number];
+
+// Response classification
+export const responseClassifications = [
+  "admission",
+  "partial_performance",
+  "objection",
+  "unsupported_denial",
+  "cure_proposal",
+  "silence"
+] as const;
+export type ResponseClassification = typeof responseClassifications[number];
+
+// Response sufficiency determination
+export const responseSufficiencyTypes = [
+  "sufficient",
+  "insufficient",
+  "non_responsive",
+  "pending_review"
+] as const;
+export type ResponseSufficiency = typeof responseSufficiencyTypes[number];
+
+// Enforcement Cases table
+export const enforcementCases = pgTable("enforcement_cases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  engagementId: varchar("engagement_id").references(() => engagements.id, { onDelete: "cascade" }),
+  agreementId: varchar("agreement_id").references(() => agreements.id, { onDelete: "cascade" }),
+  counterpartyId: varchar("counterparty_id").references(() => parties.id, { onDelete: "set null" }),
+  caseNumber: text("case_number").notNull(), // Internal reference number
+  governingLaw: text("governing_law").notNull(), // State law
+  venue: text("venue").notNull(), // County/Court
+  status: text("status").notNull().default("monitoring"),
+  currentNoticeTier: text("current_notice_tier"), // Current notice tier in ladder
+  cureDeadlineDate: text("cure_deadline_date"),
+  finalDefaultDate: text("final_default_date"),
+  evidenceLock: boolean("evidence_lock").notNull().default(false),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  notes: text("notes"),
+});
+
+export const insertEnforcementCaseSchema = createInsertSchema(enforcementCases).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEnforcementCase = z.infer<typeof insertEnforcementCaseSchema>;
+export type EnforcementCase = typeof enforcementCases.$inferSelect;
+
+// Enforcement Notices table (the notice ladder)
+export const enforcementNotices = pgTable("enforcement_notices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  tier: text("tier").notNull(), // tier1_administrative, tier2_opportunity, etc.
+  status: text("status").notNull().default("draft"),
+  title: text("title").notNull(),
+  content: text("content"), // Notice body text
+  // Notarization fields
+  notaryName: text("notary_name"),
+  notaryCommission: text("notary_commission"),
+  notaryJurisdiction: text("notary_jurisdiction"),
+  notaryExpiration: text("notary_expiration"),
+  notarizedAt: timestamp("notarized_at"),
+  // Delivery fields
+  deliveryMethod: text("delivery_method"),
+  deliverySentAt: timestamp("delivery_sent_at"),
+  deliveryConfirmedAt: timestamp("delivery_confirmed_at"),
+  trackingNumber: text("tracking_number"),
+  recipientAddress: text("recipient_address"),
+  // Deadline fields
+  responseDeadlineDays: integer("response_deadline_days").default(15),
+  responseDeadlineDate: text("response_deadline_date"),
+  // Document hash for immutability
+  documentHash: text("document_hash"), // SHA-256
+  documentPath: text("document_path"), // S3 or local path
+  isLocked: boolean("is_locked").notNull().default(false),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEnforcementNoticeSchema = createInsertSchema(enforcementNotices).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEnforcementNotice = z.infer<typeof insertEnforcementNoticeSchema>;
+export type EnforcementNotice = typeof enforcementNotices.$inferSelect;
+
+// Enforcement Supporting Documents (evidence)
+export const enforcementDocuments = pgTable("enforcement_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  noticeId: varchar("notice_id").references(() => enforcementNotices.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  type: text("type").notNull(), // PDF, Image, Receipt, etc.
+  category: text("category").notNull(), // proof_of_delivery, notary_stamp, contract_copy, etc.
+  filePath: text("file_path").notNull(),
+  fileHash: text("file_hash").notNull(), // SHA-256 for integrity
+  isLocked: boolean("is_locked").notNull().default(false),
+  lockedAt: timestamp("locked_at"),
+  uploadedById: varchar("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  notes: text("notes"),
+});
+
+export const insertEnforcementDocumentSchema = createInsertSchema(enforcementDocuments).omit({ id: true, createdAt: true });
+export type InsertEnforcementDocument = z.infer<typeof insertEnforcementDocumentSchema>;
+export type EnforcementDocument = typeof enforcementDocuments.$inferSelect;
+
+// Counterparty Responses
+export const enforcementResponses = pgTable("enforcement_responses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  noticeId: varchar("notice_id").references(() => enforcementNotices.id, { onDelete: "set null" }),
+  receivedAt: timestamp("received_at").notNull(),
+  receivedVia: text("received_via").notNull(), // email, mail, phone, in_person
+  classification: text("classification"), // admin classification
+  sufficiency: text("sufficiency").default("pending_review"),
+  summary: text("summary"),
+  fullContent: text("full_content"),
+  documentPath: text("document_path"), // Attached response document
+  documentHash: text("document_hash"),
+  classifiedById: varchar("classified_by_id").references(() => users.id, { onDelete: "set null" }),
+  classifiedAt: timestamp("classified_at"),
+  resetsDeadline: boolean("resets_deadline").notNull().default(false),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEnforcementResponseSchema = createInsertSchema(enforcementResponses).omit({ id: true, createdAt: true });
+export type InsertEnforcementResponse = z.infer<typeof insertEnforcementResponseSchema>;
+export type EnforcementResponse = typeof enforcementResponses.$inferSelect;
+
+// Enforcement Timeline Events (separate from main activities for audit purity)
+export const enforcementTimelineEventTypes = [
+  "case_created",
+  "notice_drafted",
+  "notice_notarized",
+  "notice_sent",
+  "delivery_confirmed",
+  "deadline_started",
+  "deadline_expired",
+  "response_received",
+  "response_classified",
+  "default_declared",
+  "estoppel_established",
+  "evidence_locked",
+  "status_changed",
+  "admin_note"
+] as const;
+export type EnforcementTimelineEventType = typeof enforcementTimelineEventTypes[number];
+
+export const enforcementTimeline = pgTable("enforcement_timeline", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  noticeId: varchar("notice_id").references(() => enforcementNotices.id, { onDelete: "set null" }),
+  eventType: text("event_type").notNull(),
+  occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+  description: text("description").notNull(),
+  // Proof fields
+  sentVia: text("sent_via"),
+  proofOfDelivery: text("proof_of_delivery"), // Reference to document
+  notaryReference: text("notary_reference"),
+  // Response tracking
+  counterpartyResponseId: varchar("counterparty_response_id").references(() => enforcementResponses.id, { onDelete: "set null" }),
+  counterpartyResponseStatus: text("counterparty_response_status"), // received, absent, insufficient
+  // Metadata
+  metadata: text("metadata"), // JSON for additional structured data
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEnforcementTimelineSchema = createInsertSchema(enforcementTimeline).omit({ id: true, createdAt: true });
+export type InsertEnforcementTimeline = z.infer<typeof insertEnforcementTimelineSchema>;
+export type EnforcementTimeline = typeof enforcementTimeline.$inferSelect;
+
+// Enforcement document categories for evidence classification
+export const enforcementDocumentCategories = [
+  "original_contract",
+  "proof_of_delivery",
+  "notary_stamp",
+  "mailing_receipt",
+  "email_confirmation",
+  "courier_receipt",
+  "response_document",
+  "payment_ledger",
+  "performance_log",
+  "correspondence",
+  "court_filing",
+  "other"
+] as const;
+export type EnforcementDocumentCategory = typeof enforcementDocumentCategories[number];

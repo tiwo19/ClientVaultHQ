@@ -1,0 +1,412 @@
+Replit Agent Prompt
+“Administrative Enforcement & Estoppel Engine” (Client Vault)
+
+You are my senior legal-systems engineer.
+You will implement a formal Administrative Enforcement & Estoppel Engine inside Client Vault to manage non-performing notes, contracts, and agreements.
+
+This system must create a notarized, auditable, chronological administrative record that:
+
+Places parties on lawful notice
+
+Provides clear opportunity to cure
+
+Documents non-performance
+
+Establishes estoppel through silence, admission, or failure to rebut
+
+Produces a court-ready evidence packet requiring minimal judicial interpretation
+
+This is not legal advice generation — it is administrative process orchestration and record preservation.
+
+I. Core Legal Strategy Model (System Doctrine)
+
+The system must enforce the following administrative doctrine:
+
+“Notice + Opportunity + Silence or Failure = Estoppel”
+
+Every enforcement action must be structured so that:
+
+The counterparty cannot later claim lack of notice
+
+The counterparty cannot claim ambiguity
+
+The counterparty cannot claim lack of opportunity to cure
+
+The record shows procedural fairness
+
+The counterparty’s failure becomes self-establishing evidence
+
+II. New Enforcement Object Model
+1. Enforcement Case (per agreement / note / contract)
+
+Create a new entity:
+
+enforcement_case
+
+engagement_id
+
+agreement_id
+
+counterparty_id
+
+governing_law (state)
+
+venue (county / court)
+
+enforcement_status:
+
+monitoring
+
+notice_phase
+
+default_declared
+
+estoppel_established
+
+litigation_ready
+
+resolved
+
+cure_deadline_date
+
+final_default_date
+
+evidence_lock (boolean)
+
+Each enforcement case owns its own administrative timeline.
+
+III. Administrative Notice Ladder (CRITICAL)
+
+Implement a mandatory notice sequence (configurable but opinionated):
+
+Notice Tier 1 — Administrative Notice of Record
+
+Purpose: Establish record, identify obligation, request clarification or performance.
+
+Identifies:
+
+Agreement
+
+Obligations
+
+Current deficiency
+
+Requests:
+
+Written response
+
+Evidence of performance
+
+Deadline: 10–15 days
+
+Sent via:
+
+Certified mail
+
+Email (logged)
+
+Optional courier
+
+System requirements:
+
+Letter generated from structured data
+
+PDF rendered
+
+Notary block required
+
+Notary details logged
+
+Mailing receipt uploaded & hashed
+
+Notice Tier 2 — Notice of Opportunity to Cure
+
+Purpose: Demonstrate good faith and fairness.
+
+Explicitly states:
+
+Prior notice sent
+
+No satisfactory response received
+
+Provides:
+
+Specific cure actions
+
+Exact cure deadline
+
+Warns:
+
+Failure will result in default declaration
+
+System requirements:
+
+Cannot be sent unless Tier 1 exists
+
+Deadline enforced by system clock
+
+Evidence lock on Tier 1 artifacts
+
+Notice Tier 3 — Notice of Default & Demand
+
+Purpose: Declare default formally.
+
+States:
+
+Default has occurred
+
+Cure period expired
+
+Demands:
+
+Immediate performance OR
+
+Written rebuttal with evidence
+
+Introduces:
+
+Estoppel language (failure to rebut = admission)
+
+System requirements:
+
+Requires explicit admin confirmation
+
+Triggers default_declared status
+
+All prior artifacts locked
+
+Notice Tier 4 — Notice of Estoppel & Administrative Determination
+
+Purpose: Close the record.
+
+States:
+
+Notices sent
+
+Deadlines passed
+
+No rebuttal received
+
+Declares:
+
+Facts deemed admitted
+
+Defenses waived by silence
+
+Provides:
+
+Final opportunity to contest administratively
+
+System requirements:
+
+Marks case as estoppel_established
+
+Evidence bundle auto-prepared
+
+IV. Notarization & Evidence Controls
+Notarization Module
+
+Capture:
+
+Notary name
+
+Commission number
+
+Jurisdiction
+
+Expiration
+
+Attach:
+
+Notary stamp image
+
+Signed PDF
+
+Hash:
+
+SHA-256 per document
+
+Lock:
+
+Documents immutable once notarized
+
+Evidence Integrity Rules
+
+No deletes
+
+No overwrites
+
+Versioned corrections only
+
+Court-safe audit trail
+
+V. Timeline & Estoppel Proof Spine
+
+Each notice automatically creates:
+
+Timeline Events
+
+notice_sent
+
+cure_deadline_started
+
+cure_deadline_expired
+
+default_declared
+
+estoppel_established
+
+Each event records:
+
+occurred_at
+
+sent_via
+
+proof_of_delivery
+
+notary_reference
+
+counterparty_response (or lack thereof)
+
+The absence of response is explicitly recorded as a factual condition.
+
+VI. Counterparty Response Handling (Important)
+
+If the counterparty responds:
+
+Upload response
+
+Tag response type:
+
+admission
+
+partial performance
+
+objection
+
+unsupported denial
+
+Require admin classification:
+
+sufficient
+
+insufficient
+
+non-responsive
+
+Unsupported or non-responsive replies do not reset the clock unless admin explicitly approves.
+
+VII. Court-Ready Evidence Binder (One-Click)
+
+Implement “Litigation Packet Export”:
+
+Contents:
+
+Administrative chronology (date-certain)
+
+Copies of all notices
+
+Proof of delivery
+
+Notary records
+
+Contract / note
+
+Payment ledger or performance log
+
+Silence affidavit (system-generated)
+
+Evidence index with hashes
+
+Formats:
+
+PDF (judge-readable)
+
+ZIP (attachments)
+
+CSV (timeline)
+
+This export must be mechanically reproducible — same inputs, same outputs.
+
+VIII. Legal Risk Controls (Important)
+
+The system must:
+
+Force neutral language (no threats)
+
+Avoid unauthorized legal advice
+
+Require human confirmation before default declaration
+
+Log every admin action
+
+This protects you, while still creating overwhelming procedural clarity.
+
+IX. AI Support (Advisory Only)
+
+Add AI Enforcement Advisor:
+
+Reviews enforcement case
+
+Flags:
+
+missing notice steps
+
+weak delivery proof
+
+inconsistent dates
+
+Suggests:
+
+next administrative step
+
+whether estoppel conditions appear satisfied
+
+AI outputs are recommendations only, stored as advisory timeline events.
+
+X. UI Requirements
+Enforcement Dashboard
+
+All active enforcement cases
+
+Countdown timers per notice
+
+Color-coded status:
+
+green (monitoring)
+
+yellow (notice pending)
+
+red (default)
+
+black (estoppel complete)
+
+Enforcement Case View
+
+Tabs:
+
+Overview
+
+Notices
+
+Timeline
+
+Documents
+
+Responses
+
+Evidence Export
+
+XI. Outcome Guarantee (System Objective)
+
+By the end of the notice ladder, the system must allow you to truthfully state:
+
+“The opposing party was given repeated, documented, notarized notice, clear opportunity to cure, and failed to rebut or perform. The record speaks for itself.”
+
+At that point:
+
+Litigation becomes procedural
+
+Defenses collapse
+
+The judge reads a timeline, not a story

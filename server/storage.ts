@@ -16,8 +16,14 @@ import {
   type EngagementAgreement, type InsertEngagementAgreement,
   type AuditLog, type InsertAuditLog,
   type Task, type InsertTask,
+  type EnforcementCase, type InsertEnforcementCase,
+  type EnforcementNotice, type InsertEnforcementNotice,
+  type EnforcementDocument, type InsertEnforcementDocument,
+  type EnforcementResponse, type InsertEnforcementResponse,
+  type EnforcementTimeline, type InsertEnforcementTimeline,
   users, parties, persons, agreements, activities, documents, partyRelationships, creditTransactions,
-  contactPoints, addresses, engagements, engagementMemberships, engagementParties, engagementAgreements, auditLogs, tasks
+  contactPoints, addresses, engagements, engagementMemberships, engagementParties, engagementAgreements, auditLogs, tasks,
+  enforcementCases, enforcementNotices, enforcementDocuments, enforcementResponses, enforcementTimeline
 } from "@shared/schema";
 import { eq, or, and, desc, sql, inArray } from "drizzle-orm";
 
@@ -129,6 +135,34 @@ export interface IStorage {
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: string, task: Partial<InsertTask>): Promise<Task | undefined>;
   deleteTask(id: string): Promise<void>;
+
+  // Enforcement Cases
+  getAllEnforcementCases(): Promise<EnforcementCase[]>;
+  getEnforcementCase(id: string): Promise<EnforcementCase | undefined>;
+  getEnforcementCasesByEngagement(engagementId: string): Promise<EnforcementCase[]>;
+  getEnforcementCasesByAgreement(agreementId: string): Promise<EnforcementCase[]>;
+  createEnforcementCase(enfCase: InsertEnforcementCase): Promise<EnforcementCase>;
+  updateEnforcementCase(id: string, enfCase: Partial<InsertEnforcementCase>): Promise<EnforcementCase | undefined>;
+
+  // Enforcement Notices
+  getEnforcementNotices(caseId: string): Promise<EnforcementNotice[]>;
+  getEnforcementNotice(id: string): Promise<EnforcementNotice | undefined>;
+  createEnforcementNotice(notice: InsertEnforcementNotice): Promise<EnforcementNotice>;
+  updateEnforcementNotice(id: string, notice: Partial<InsertEnforcementNotice>): Promise<EnforcementNotice | undefined>;
+
+  // Enforcement Documents
+  getEnforcementDocuments(caseId: string): Promise<EnforcementDocument[]>;
+  createEnforcementDocument(doc: InsertEnforcementDocument): Promise<EnforcementDocument>;
+  updateEnforcementDocument(id: string, doc: Partial<InsertEnforcementDocument>): Promise<EnforcementDocument | undefined>;
+
+  // Enforcement Responses
+  getEnforcementResponses(caseId: string): Promise<EnforcementResponse[]>;
+  createEnforcementResponse(response: InsertEnforcementResponse): Promise<EnforcementResponse>;
+  updateEnforcementResponse(id: string, response: Partial<InsertEnforcementResponse>): Promise<EnforcementResponse | undefined>;
+
+  // Enforcement Timeline
+  getEnforcementTimeline(caseId: string): Promise<EnforcementTimeline[]>;
+  createEnforcementTimelineEvent(event: InsertEnforcementTimeline): Promise<EnforcementTimeline>;
 }
 
 export class DbStorage implements IStorage {
@@ -622,6 +656,120 @@ export class DbStorage implements IStorage {
 
   async deleteTask(id: string): Promise<void> {
     await db.delete(tasks).where(eq(tasks.id, id));
+  }
+
+  // ==================== ENFORCEMENT ENGINE ====================
+
+  // Enforcement Cases
+  async getAllEnforcementCases(): Promise<EnforcementCase[]> {
+    return await db.select().from(enforcementCases).orderBy(desc(enforcementCases.createdAt));
+  }
+
+  async getEnforcementCase(id: string): Promise<EnforcementCase | undefined> {
+    const result = await db.select().from(enforcementCases).where(eq(enforcementCases.id, id));
+    return result[0];
+  }
+
+  async getEnforcementCasesByEngagement(engagementId: string): Promise<EnforcementCase[]> {
+    return await db.select().from(enforcementCases)
+      .where(eq(enforcementCases.engagementId, engagementId))
+      .orderBy(desc(enforcementCases.createdAt));
+  }
+
+  async getEnforcementCasesByAgreement(agreementId: string): Promise<EnforcementCase[]> {
+    return await db.select().from(enforcementCases)
+      .where(eq(enforcementCases.agreementId, agreementId))
+      .orderBy(desc(enforcementCases.createdAt));
+  }
+
+  async createEnforcementCase(enfCase: InsertEnforcementCase): Promise<EnforcementCase> {
+    const result = await db.insert(enforcementCases).values(enfCase).returning();
+    return result[0];
+  }
+
+  async updateEnforcementCase(id: string, enfCase: Partial<InsertEnforcementCase>): Promise<EnforcementCase | undefined> {
+    const result = await db.update(enforcementCases)
+      .set({ ...enfCase, updatedAt: new Date() })
+      .where(eq(enforcementCases.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Enforcement Notices
+  async getEnforcementNotices(caseId: string): Promise<EnforcementNotice[]> {
+    return await db.select().from(enforcementNotices)
+      .where(eq(enforcementNotices.caseId, caseId))
+      .orderBy(enforcementNotices.tier);
+  }
+
+  async getEnforcementNotice(id: string): Promise<EnforcementNotice | undefined> {
+    const result = await db.select().from(enforcementNotices).where(eq(enforcementNotices.id, id));
+    return result[0];
+  }
+
+  async createEnforcementNotice(notice: InsertEnforcementNotice): Promise<EnforcementNotice> {
+    const result = await db.insert(enforcementNotices).values(notice).returning();
+    return result[0];
+  }
+
+  async updateEnforcementNotice(id: string, notice: Partial<InsertEnforcementNotice>): Promise<EnforcementNotice | undefined> {
+    const result = await db.update(enforcementNotices)
+      .set({ ...notice, updatedAt: new Date() })
+      .where(eq(enforcementNotices.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Enforcement Documents
+  async getEnforcementDocuments(caseId: string): Promise<EnforcementDocument[]> {
+    return await db.select().from(enforcementDocuments)
+      .where(eq(enforcementDocuments.caseId, caseId))
+      .orderBy(desc(enforcementDocuments.createdAt));
+  }
+
+  async createEnforcementDocument(doc: InsertEnforcementDocument): Promise<EnforcementDocument> {
+    const result = await db.insert(enforcementDocuments).values(doc).returning();
+    return result[0];
+  }
+
+  async updateEnforcementDocument(id: string, doc: Partial<InsertEnforcementDocument>): Promise<EnforcementDocument | undefined> {
+    const result = await db.update(enforcementDocuments)
+      .set(doc)
+      .where(eq(enforcementDocuments.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Enforcement Responses
+  async getEnforcementResponses(caseId: string): Promise<EnforcementResponse[]> {
+    return await db.select().from(enforcementResponses)
+      .where(eq(enforcementResponses.caseId, caseId))
+      .orderBy(desc(enforcementResponses.receivedAt));
+  }
+
+  async createEnforcementResponse(response: InsertEnforcementResponse): Promise<EnforcementResponse> {
+    const result = await db.insert(enforcementResponses).values(response).returning();
+    return result[0];
+  }
+
+  async updateEnforcementResponse(id: string, response: Partial<InsertEnforcementResponse>): Promise<EnforcementResponse | undefined> {
+    const result = await db.update(enforcementResponses)
+      .set(response)
+      .where(eq(enforcementResponses.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Enforcement Timeline
+  async getEnforcementTimeline(caseId: string): Promise<EnforcementTimeline[]> {
+    return await db.select().from(enforcementTimeline)
+      .where(eq(enforcementTimeline.caseId, caseId))
+      .orderBy(desc(enforcementTimeline.occurredAt));
+  }
+
+  async createEnforcementTimelineEvent(event: InsertEnforcementTimeline): Promise<EnforcementTimeline> {
+    const result = await db.insert(enforcementTimeline).values(event).returning();
+    return result[0];
   }
 }
 
