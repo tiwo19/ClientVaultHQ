@@ -1,0 +1,337 @@
+You are my senior full-stack engineer + compliance architect working inside my existing “Client Vault” Replit app.
+
+GOAL
+Build an “Administrative Enforcement & Estoppel Engine” for non-performing notes / contracts that produces a notarized, court-ready administrative record (timeline + evidence + exports). This is NOT a template system: letters must be AI-generated, neutral, jurisdiction-safe, and strictly grounded in the case record. The system must also generate a sworn “Silence / Non-Response” affidavit, and map workflows for small claims → circuit court, plus collections / lien / judgment integrations.
+
+NON-NEGOTIABLE PRINCIPLES
+1) Fact-bound outputs only: AI may only state facts that exist in the Client Vault record for that enforcement case. No invention, no speculation.
+2) Neutral, jurisdiction-safe tone: no threats, no accusations, no inflammatory language.
+3) Procedural fairness: every letter provides clear notice + opportunity to cure + clear response deadline.
+4) Evidence integrity: notarized and sent artifacts are immutable (no deletes/overwrites; versioned corrections only).
+5) Court readiness: one-click evidence binder export (PDF + ZIP + CSV) with hashes, chronology, delivery proofs.
+6) Human in the loop: declaring Default and Estoppel requires explicit admin confirmation clicks.
+
+DELIVERABLES
+A) Data model (Drizzle + Postgres) for enforcement cases, notices, delivery proofs, affidavits, exports, and locks.
+B) Backend routes (Express) for creating cases, generating letters via AI, recording notarization, recording delivery proofs, deadlines, responses, and exporting evidence binder.
+C) Frontend UI (React) for an Enforcement Dashboard + Enforcement Case view (tabs: Overview, Notices, Timeline, Evidence, Responses, Exports, Court Path).
+D) AI prompt system (server side) that generates:
+   1) Administrative Notice of Record
+   2) Opportunity to Cure Notice
+   3) Notice of Default & Demand (fact-only)
+   4) Notice of Estoppel & Administrative Determination (fact-only)
+   5) Affidavit of Administrative Notice, Non-Response, and Estoppel by Silence (sworn numbered paragraphs)
+E) Court path mapping & checklists:
+   - Small Claims packet composition
+   - Circuit Court packet composition
+   - Collections / lien / judgment readiness checklist
+F) Governance controls:
+   - Role-based permissions (owner/internal/external)
+   - External parties can only see cases they’re assigned to
+   - Audit log for every admin action
+
+IMPLEMENTATION DETAILS
+
+1) DATABASE SCHEMA (Drizzle)
+Create tables (or extend existing) with migrations:
+
+enforcement_cases
+- id (pk)
+- engagement_id (fk)
+- agreement_id (fk)
+- counterparty_party_id (fk)
+- governing_law_state (text)
+- venue_county (text)
+- venue_court (text)
+- status enum:
+  monitoring | notice_phase | default_declared | estoppel_established | litigation_ready | resolved
+- current_step enum:
+  notice_record | cure_notice | default_notice | estoppel_notice | affidavit | export
+- cure_deadline_at (timestamptz)
+- final_default_at (timestamptz)
+- created_by_user_id
+- created_at, updated_at
+- evidence_lock boolean (default false)
+
+enforcement_notices
+- id (pk)
+- enforcement_case_id (fk)
+- notice_type enum: record | cure | default | estoppel
+- version int
+- generated_at
+- generated_by_user_id
+- ai_model (text)
+- ai_prompt_version (text)
+- ai_input_snapshot_json (jsonb)   // the exact structured record inputs used
+- ai_output_text (text)            // final letter body
+- rendered_pdf_doc_id (fk -> documents)
+- notarized_pdf_doc_id (fk -> documents) nullable
+- notarized_at nullable
+- notary_name, notary_commission, notary_state, notary_expires nullable
+- response_deadline_at (timestamptz)
+- status enum: drafted | notarized | sent | deadline_expired | superseded
+- created_at, updated_at
+
+enforcement_delivery_proofs
+- id (pk)
+- enforcement_notice_id (fk)
+- method enum: certified_mail | email | courier | in_person | other
+- tracking_number text nullable
+- sent_to_address text nullable
+- sent_to_email text nullable
+- sent_at timestamptz
+- delivery_status enum: sent | delivered | attempted | returned | unknown
+- delivery_at timestamptz nullable
+- proof_doc_id (fk -> documents)  // scan of certified receipt, email headers, etc.
+- created_at
+
+enforcement_responses
+- id (pk)
+- enforcement_case_id (fk)
+- received_at timestamptz
+- received_via enum: mail | email | sms | whatsapp | call | other
+- response_type enum: admission | partial_performance | objection | denial | non_responsive | unknown
+- summary text
+- response_doc_id (fk -> documents) nullable
+- admin_classification enum: sufficient | insufficient | pending
+- classified_by_user_id nullable
+- created_at
+
+enforcement_affidavits
+- id (pk)
+- enforcement_case_id (fk)
+- version int
+- generated_at
+- generated_by_user_id
+- ai_model, ai_prompt_version
+- ai_input_snapshot_json (jsonb)
+- ai_output_text (text)          // sworn numbered paragraphs
+- rendered_pdf_doc_id (fk -> documents)
+- notarized_pdf_doc_id (fk -> documents) nullable
+- notarized_at nullable
+- notary fields...
+- status enum: drafted | notarized | filed_ready
+- created_at, updated_at
+
+evidence_exports
+- id (pk)
+- enforcement_case_id (fk)
+- requested_by_user_id
+- requested_at
+- status enum: queued | generating | complete | failed
+- export_pdf_doc_id (fk -> documents) nullable
+- export_zip_doc_id (fk -> documents) nullable
+- export_csv_doc_id (fk -> documents) nullable
+- manifest_json (jsonb)     // listing items + hashes
+- created_at, updated_at
+
+audit_log
+- id, user_id, action, entity_type, entity_id, metadata_json, created_at
+
+Document integrity upgrades (if not already):
+document_versions
+- doc_id, version, sha256, locked boolean, locked_at, locked_by_user_id, created_at
+Rule: notarized docs must be locked, no deletes, no overwrite.
+
+2) TIMELINE INTEGRATION
+For every enforcement action, append TimelineEvents (existing timeline system if present; otherwise create):
+- notice_generated
+- notice_notarized
+- notice_sent
+- delivery_update
+- deadline_started
+- deadline_expired
+- response_received
+- default_declared
+- estoppel_established
+- affidavit_generated
+- affidavit_notarized
+- export_generated
+Timeline events must store:
+- occurredAt vs capturedAt
+- links to notice/affidavit/export ids
+- visibility flag (internal vs shared)
+
+3) ROLE-BASED ACCESS + SHARING
+Implement enforcement_case_membership via engagement membership rules:
+- owner/internal roles can see all within tenant scope.
+- external parties can only see assigned engagement/case.
+Add permissions gates to all new endpoints.
+Log membership changes in audit_log.
+
+4) UI (React)
+Add left nav: Enforcement.
+Create pages:
+
+A) EnforcementDashboard
+- list of enforcement cases with:
+  - counterparty
+  - agreement
+  - status badge
+  - next deadline countdown
+  - “needs action” indicator
+  - filters: status, counterparty, deadline range
+
+B) EnforcementCaseView with tabs:
+- Overview (agreement summary, obligations, amounts, governing law, venue)
+- Notices (ladder steps + generate/notarize/send buttons + deadlines)
+- Delivery Proofs (upload receipts, tracking, status)
+- Responses (upload + classify)
+- Timeline (merged case timeline)
+- Court Path (small claims vs circuit checklist)
+- Exports (generate evidence binder)
+
+HUMAN-IN-LOOP CONFIRMATIONS
+Buttons that require confirmation modal:
+- “Declare Default” (moves status to default_declared)
+- “Establish Estoppel” (moves status to estoppel_established)
+These actions must verify all prerequisites are met and then write an audit log entry.
+
+5) AI AUTHORING SYSTEM (SERVER SIDE)
+Implement a server module: server/enforcement/aiAuthor.ts
+
+AI INPUT ASSEMBLY (STRICT)
+Given enforcement_case_id, assemble “record snapshot” JSON:
+- parties (names, addresses, emails) from Party table
+- agreement metadata (title, date, obligations) from Agreement record
+- performance ledger: payments due/received + dates (from ledger or notes)
+- timeline events relevant to performance + prior notices
+- prior notice history (type, dates, deadlines, delivery proofs)
+- responses received (or explicit “none received as of DATE”)
+- governing law state + venue fields
+Only include verified fields; omit unknowns.
+
+AI OUTPUT TYPES
+Generate 5 types:
+1) NOTICE_RECORD
+2) NOTICE_CURE
+3) NOTICE_DEFAULT
+4) NOTICE_ESTOPPEL
+5) AFFIDAVIT_SILENCE
+
+PROMPT CONSTRAINTS (MANDATORY)
+- Do not add facts not in the input.
+- Do not speculate.
+- Do not threaten.
+- Do not cite statutes unless provided in the input snapshot.
+- Use neutral administrative tone.
+- Provide clear response/cure deadline.
+- Include “reservation of rights” clause (neutral).
+- Include notarization block placeholder.
+- Format must be judge-readable.
+
+PROMPT TEMPLATE (USE THIS EXACT STRUCTURE)
+System prompt:
+“You are an Administrative Record Authoring AI. You write neutral, jurisdiction-safe administrative instruments based strictly on supplied records. You do not invent facts. You do not speculate. You do not threaten. You do not provide legal advice. You only restate record facts in a formal administrative tone suitable for court.”
+
+User prompt:
+- Provide notice_type
+- Provide the record snapshot JSON
+- Provide a required deadline date
+- Provide required formatting rules
+
+AFFIDAVIT FORMAT RULES
+- Title: “Affidavit of Administrative Notice, Non-Response, and Estoppel by Silence”
+- Numbered paragraphs
+- First-person sworn statements by the affiant
+- Include affiant role as record custodian/manager
+- Chronology of notices with dates + delivery proof references
+- Explicit statement: “No written rebuttal / no performance was received as of [DATE]” (only if true)
+- Jurat + notary block placeholder
+
+STORE EVERYTHING
+For each generation:
+- store ai_input_snapshot_json (exact input)
+- store ai_output_text (exact output)
+- store ai_model + ai_prompt_version
+- render PDF from output (server-side)
+- attach to documents with sha256
+- create enforcement_notices / enforcement_affidavits row
+
+6) NOTICE LADDER RULES (PREREQUISITES)
+Enforce step order unless admin explicitly overrides with a logged justification:
+- Cannot generate Cure unless Record notice exists (sent or at least notarized)
+- Cannot generate Default unless Cure deadline expired (or admin override + log)
+- Cannot generate Estoppel unless Default notice sent and deadline expired
+- Affidavit can be generated after Estoppel notice OR when record is otherwise complete
+Each transition creates timeline events.
+
+7) DELIVERY PROOF CAPTURE
+UI must support uploading:
+- certified mail receipt scan
+- tracking proof
+- email headers/SMTP evidence
+- courier delivery confirmation
+These are stored as documents, hashed, and linked.
+
+8) COURT PATH MAPPING (CHECKLISTS + PACKETS)
+Add “Court Path” tab that generates checklists and packet composition:
+
+Small Claims Packet:
+- Agreement/note
+- ledger/performance summary
+- Notice ladder (record + cure + default + estoppel if used)
+- delivery proofs
+- affidavit of non-response
+- evidence index with hashes
+
+Circuit Court Packet:
+- all above plus:
+- fuller chronology
+- exhibits list
+- export binder ZIP
+
+Do NOT give legal advice; simply provide procedural packet assembly and “completeness indicators.”
+
+9) EXPORT / EVIDENCE BINDER GENERATOR
+Implement POST /api/enforcement/:id/export
+Generate:
+- PDF chronology (date-certain)
+- PDF compilation of notices + affidavit
+- CSV of timeline events
+- ZIP of all attachments (contracts, receipts, recordings, transcripts, responses)
+Create a manifest.json with sha256 for each included file.
+Store export artifacts as documents and link in evidence_exports.
+
+10) COLLECTIONS / LIEN / JUDGMENT INTEGRATIONS (READINESS)
+Add “Readiness” panel with toggles/checks:
+- Have we identified debtor address?
+- Have we verified governing law & venue?
+- Have we delivered notices with proof?
+- Has deadline expired?
+- Have we generated affidavit?
+- Is evidence binder complete?
+These are NOT legal actions; they are administrative readiness indicators.
+
+11) TEST DATA + QA
+Add seed script that creates:
+- sample engagement + agreement + counterparty
+- a few timeline events
+- notice ladder progression
+- export binder generation
+Add unit tests for:
+- step prerequisites
+- evidence locks
+- permissions
+- deterministic export manifest creation
+
+EXECUTION REQUIREMENTS
+- Implement incrementally with small PR-sized commits.
+- Keep UI clean and fast; no heavy dependencies.
+- Use existing app patterns (Wouter routes, TanStack Query).
+- Use existing document storage; extend with versioning and sha256 + lock semantics if missing.
+- Ensure every state transition writes an audit_log entry.
+
+FINAL OUTPUT
+When complete, I should be able to:
+1) Create enforcement case from an agreement
+2) Generate AI-authored Notice of Record
+3) Mark notarized, upload notary stamp, lock it
+4) Record sending + upload certified receipt
+5) Auto track deadline
+6) Generate Cure, then Default, then Estoppel (with prerequisites)
+7) Generate the Silence/Non-Response affidavit (sworn format)
+8) Export court-ready evidence binder (PDF + ZIP + CSV + hashes)
+9) Share the case with an external party who can only see their own engagement/case
+
+START NOW: implement schema + routes + UI skeleton first, then AI authoring, then export binder.

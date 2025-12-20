@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertActivitySchema, insertDocumentSchema, insertContactPointSchema, insertAddressSchema, insertEngagementSchema, insertEngagementMembershipSchema, insertEngagementPartySchema, insertEngagementAgreementSchema, engagementRoles, type EngagementRole } from "@shared/schema";
+import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertActivitySchema, insertDocumentSchema, insertContactPointSchema, insertAddressSchema, insertEngagementSchema, insertEngagementMembershipSchema, insertEngagementPartySchema, insertEngagementAgreementSchema, engagementRoles, type EngagementRole, insertEnforcementCaseSchema, insertEnforcementNoticeSchema, insertEnforcementDocumentSchema, insertEnforcementResponseSchema, insertEnforcementTimelineSchema, enforcementStatuses, noticeTiers } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import session from "express-session";
@@ -2535,6 +2535,360 @@ ${recentTimeline.map((a: any) => `- ${a.date}: [${a.type}] ${a.content}`).join("
       }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== ENFORCEMENT ENGINE ROUTES ====================
+
+  // Get all enforcement cases
+  app.get("/api/enforcement/cases", requireAuth, async (req, res) => {
+    try {
+      const cases = await storage.getAllEnforcementCases();
+      res.json(cases);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get enforcement case by ID with related data
+  app.get("/api/enforcement/cases/:id", requireAuth, async (req, res) => {
+    try {
+      const enfCase = await storage.getEnforcementCase(req.params.id);
+      if (!enfCase) {
+        return res.status(404).json({ error: "Enforcement case not found" });
+      }
+      
+      const [notices, documents, responses, timeline] = await Promise.all([
+        storage.getEnforcementNotices(req.params.id),
+        storage.getEnforcementDocuments(req.params.id),
+        storage.getEnforcementResponses(req.params.id),
+        storage.getEnforcementTimeline(req.params.id)
+      ]);
+      
+      res.json({ ...enfCase, notices, documents, responses, timeline });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get enforcement cases by engagement
+  app.get("/api/engagements/:engagementId/enforcement/cases", requireAuth, async (req, res) => {
+    try {
+      const cases = await storage.getEnforcementCasesByEngagement(req.params.engagementId);
+      res.json(cases);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get enforcement cases by agreement
+  app.get("/api/agreements/:agreementId/enforcement/cases", requireAuth, async (req, res) => {
+    try {
+      const cases = await storage.getEnforcementCasesByAgreement(req.params.agreementId);
+      res.json(cases);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create enforcement case
+  app.post("/api/enforcement/cases", requireAuth, async (req, res) => {
+    try {
+      const parsed = insertEnforcementCaseSchema.parse(req.body);
+      const enfCase = await storage.createEnforcementCase({
+        ...parsed,
+        createdById: req.session.userId!
+      });
+      
+      // Create initial timeline event
+      await storage.createEnforcementTimelineEvent({
+        caseId: enfCase.id,
+        eventType: "case_created",
+        description: `Enforcement case opened: ${parsed.caseNumber}`,
+        createdById: req.session.userId!
+      });
+      
+      res.status(201).json(enfCase);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update enforcement case status
+  app.patch("/api/enforcement/cases/:id", requireAuth, async (req, res) => {
+    try {
+      const { status, ...updates } = req.body;
+      
+      const existingCase = await storage.getEnforcementCase(req.params.id);
+      if (!existingCase) {
+        return res.status(404).json({ error: "Enforcement case not found" });
+      }
+      
+      // Validate status transition if status is being changed
+      if (status && status !== existingCase.status) {
+        const validTransitions: Record<string, string[]> = {
+          monitoring: ["notice_phase", "resolved"],
+          notice_phase: ["default_declared", "resolved"],
+          default_declared: ["estoppel_established", "resolved"],
+          estoppel_established: ["litigation_ready", "resolved"],
+          litigation_ready: ["resolved"],
+          resolved: []
+        };
+        
+        if (!validTransitions[existingCase.status]?.includes(status)) {
+          return res.status(400).json({ 
+            error: `Invalid status transition from ${existingCase.status} to ${status}` 
+          });
+        }
+      }
+      
+      const updated = await storage.updateEnforcementCase(req.params.id, { status, ...updates });
+      
+      // Log status change
+      if (status && status !== existingCase.status) {
+        await storage.createEnforcementTimelineEvent({
+          caseId: req.params.id,
+          eventType: "status_changed",
+          description: `Case status updated from ${existingCase.status} to ${status}`,
+          createdById: req.session.userId!
+        });
+      }
+      
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get notices for a case
+  app.get("/api/enforcement/cases/:caseId/notices", requireAuth, async (req, res) => {
+    try {
+      const notices = await storage.getEnforcementNotices(req.params.caseId);
+      res.json(notices);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create enforcement notice (enforces tier sequence)
+  app.post("/api/enforcement/cases/:caseId/notices", requireAuth, async (req, res) => {
+    try {
+      const parsed = insertEnforcementNoticeSchema.parse({
+        ...req.body,
+        caseId: req.params.caseId
+      });
+      
+      // Check tier sequence - tiers are text like tier1_administrative, tier2_opportunity, etc.
+      const existingNotices = await storage.getEnforcementNotices(req.params.caseId);
+      const tierOrder = ["tier1_administrative", "tier2_opportunity", "tier3_default", "tier4_estoppel"];
+      const existingTierIndices = existingNotices.map(n => tierOrder.indexOf(n.tier)).filter(i => i >= 0);
+      const maxTierIndex = existingTierIndices.length > 0 ? Math.max(...existingTierIndices) : -1;
+      const expectedTierIndex = maxTierIndex + 1;
+      const newTierIndex = tierOrder.indexOf(parsed.tier);
+      
+      if (newTierIndex !== expectedTierIndex && expectedTierIndex < tierOrder.length) {
+        return res.status(400).json({ 
+          error: `Invalid tier sequence. Expected ${tierOrder[expectedTierIndex]}, got ${parsed.tier}. Notices must be sent in order.`
+        });
+      }
+      
+      const notice = await storage.createEnforcementNotice({
+        ...parsed,
+        createdById: req.session.userId!
+      });
+      
+      // Update case status to notice_phase if this is the first notice
+      const enfCase = await storage.getEnforcementCase(req.params.caseId);
+      if (enfCase?.status === "monitoring") {
+        await storage.updateEnforcementCase(req.params.caseId, { status: "notice_phase" });
+      }
+      
+      const tierNames: Record<string, string> = {
+        tier1_administrative: "Administrative Notice",
+        tier2_opportunity: "Opportunity to Cure",
+        tier3_default: "Notice of Default",
+        tier4_estoppel: "Notice of Estoppel"
+      };
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "notice_drafted",
+        noticeId: notice.id,
+        description: `${tierNames[parsed.tier] || parsed.tier} created${parsed.responseDeadlineDate ? ` with deadline ${parsed.responseDeadlineDate}` : ''}`,
+        createdById: req.session.userId!
+      });
+      
+      res.status(201).json(notice);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update notice (e.g., mark as sent, notarized)
+  app.patch("/api/enforcement/notices/:id", requireAuth, async (req, res) => {
+    try {
+      const notice = await storage.getEnforcementNotice(req.params.id);
+      if (!notice) {
+        return res.status(404).json({ error: "Notice not found" });
+      }
+      
+      const updates = req.body;
+      
+      // If marking as sent, record sent date
+      if (updates.status === "sent" && notice.status === "draft") {
+        updates.deliverySentAt = new Date();
+      }
+      
+      const updated = await storage.updateEnforcementNotice(req.params.id, updates);
+      
+      // Log significant events
+      if (updates.status === "sent") {
+        await storage.createEnforcementTimelineEvent({
+          caseId: notice.caseId,
+          eventType: "notice_sent",
+          noticeId: notice.id,
+          description: `${notice.tier.replace('_', ' ')} sent to counterparty`,
+          createdById: req.session.userId!
+        });
+      }
+      
+      if (updates.notarizedAt) {
+        await storage.createEnforcementTimelineEvent({
+          caseId: notice.caseId,
+          eventType: "notice_notarized",
+          noticeId: notice.id,
+          description: `${notice.tier.replace('_', ' ')} has been notarized`,
+          createdById: req.session.userId!
+        });
+      }
+      
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get enforcement documents
+  app.get("/api/enforcement/cases/:caseId/documents", requireAuth, async (req, res) => {
+    try {
+      const documents = await storage.getEnforcementDocuments(req.params.caseId);
+      res.json(documents);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add document to enforcement case
+  app.post("/api/enforcement/cases/:caseId/documents", requireAuth, async (req, res) => {
+    try {
+      const parsed = insertEnforcementDocumentSchema.parse({
+        ...req.body,
+        caseId: req.params.caseId
+      });
+      
+      const doc = await storage.createEnforcementDocument({
+        ...parsed,
+        uploadedById: req.session.userId!
+      });
+      
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "evidence_locked",
+        description: `Evidence document added: ${parsed.type} - ${parsed.name}`,
+        createdById: req.session.userId!
+      });
+      
+      res.status(201).json(doc);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Lock document (for court-ready evidence)
+  app.post("/api/enforcement/documents/:id/lock", requireAuth, async (req, res) => {
+    try {
+      const doc = await storage.updateEnforcementDocument(req.params.id, {
+        isLocked: true,
+        lockedAt: new Date()
+      });
+      
+      if (doc) {
+        await storage.createEnforcementTimelineEvent({
+          caseId: doc.caseId,
+          eventType: "evidence_locked",
+          description: `Document locked for evidence preservation: ${doc.name}`,
+          createdById: req.session.userId!
+        });
+      }
+      
+      res.json(doc);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get enforcement responses
+  app.get("/api/enforcement/cases/:caseId/responses", requireAuth, async (req, res) => {
+    try {
+      const responses = await storage.getEnforcementResponses(req.params.caseId);
+      res.json(responses);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Record counterparty response
+  app.post("/api/enforcement/cases/:caseId/responses", requireAuth, async (req, res) => {
+    try {
+      const parsed = insertEnforcementResponseSchema.parse({
+        ...req.body,
+        caseId: req.params.caseId
+      });
+      
+      const response = await storage.createEnforcementResponse({
+        ...parsed,
+        createdById: req.session.userId!
+      });
+      
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "response_received",
+        description: `Counterparty response received via ${parsed.receivedVia}${parsed.classification ? `: ${parsed.classification}` : ''}`,
+        counterpartyResponseId: response.id,
+        createdById: req.session.userId!
+      });
+      
+      res.status(201).json(response);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get enforcement timeline
+  app.get("/api/enforcement/cases/:caseId/timeline", requireAuth, async (req, res) => {
+    try {
+      const timeline = await storage.getEnforcementTimeline(req.params.caseId);
+      res.json(timeline);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add manual timeline event (e.g., notes, meetings)
+  app.post("/api/enforcement/cases/:caseId/timeline", requireAuth, async (req, res) => {
+    try {
+      const parsed = insertEnforcementTimelineSchema.parse({
+        ...req.body,
+        caseId: req.params.caseId
+      });
+      
+      const event = await storage.createEnforcementTimelineEvent({
+        ...parsed,
+        createdById: req.session.userId!
+      });
+      
+      res.status(201).json(event);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
     }
   });
 

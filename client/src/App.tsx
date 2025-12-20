@@ -6,6 +6,7 @@ import Layout from "@/components/Layout";
 import Dashboard from "@/pages/Dashboard";
 import Agreements from "@/pages/Agreements";
 import Enforcement from "@/pages/Enforcement";
+import EnforcementCaseDetail from "@/pages/EnforcementCaseDetail";
 import Parties from "@/pages/Parties";
 import PartyDetail from "@/pages/PartyDetail";
 import AgreementDetail from "@/pages/AgreementDetail";
@@ -59,6 +60,9 @@ function Router() {
       </Route>
       <Route path="/enforcement">
         <ProtectedRoute component={Enforcement} />
+      </Route>
+      <Route path="/enforcement/:id">
+        <ProtectedRoute component={EnforcementCaseDetail} />
       </Route>
       <Route path="/parties">
         <ProtectedRoute component={Parties} />
