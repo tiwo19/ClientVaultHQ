@@ -3526,13 +3526,6 @@ ${recentTimeline.map((a: any) => `- ${a.date}: [${a.type}] ${a.content}`).join("
         createdByUserId: req.session.userId!
       });
 
-      await storage.createEnforcementTimelineEvent({
-        caseId: req.params.caseId,
-        eventType: "ReferralPacketGenerated",
-        description: "Referral packet generation initiated",
-        createdById: req.session.userId!
-      });
-
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "generate_referral_packet",
@@ -3541,19 +3534,13 @@ ${recentTimeline.map((a: any) => `- ${a.date}: [${a.type}] ${a.content}`).join("
         metadata: JSON.stringify({ packetId: packet.id, assessmentId: assessment?.id })
       });
 
-      // For now, just mark as complete with placeholder manifest
-      // In production, this would trigger async PDF/ZIP generation
-      await storage.updateReferralPacket(packet.id, {
-        status: "complete",
-        manifestJson: JSON.stringify({
-          generatedAt: new Date().toISOString(),
-          caseId: req.params.caseId,
-          exhibitCount: 0,
-          sha256: "pending_implementation"
-        })
-      });
+      // Generate the actual packet with manifest and summary
+      const { generatePacketAndStore } = await import("./fraud/referralPacketGenerator");
+      await generatePacketAndStore(req.params.caseId, packet.id, req.session.userId!);
 
-      res.json(packet);
+      // Fetch the updated packet with the manifest
+      const updatedPacket = await storage.getReferralPacket(packet.id);
+      res.json(updatedPacket);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }

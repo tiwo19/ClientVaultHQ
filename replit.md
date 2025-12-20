@@ -210,8 +210,23 @@ Preferred communication style: Simple, everyday language.
 - AI actions logged to append-only ai_actions_log with SHA256 hash for audit integrity
 - UI shows "Requires Approval" badge for supervisor-needed actions, disables blocked actions
 
+**Fraud & Criminal Indicators Engine (December 2024):**
+- AI-powered fraud pattern detection for enforcement cases
+- Database tables: fraud_indicators (catalog of 15 indicator codes), fraud_assessments, fraud_findings, referral_packets, entity_graph_edges
+- Indicator categories: identity, misrepresentation, funds_flow, communications, insurance, regulatory, pattern
+- Scoring system: severity weight (1-10) × confidence multiplier (low=1, medium=2, high=3)
+- Threshold levels: none (0-9), watch (10-24), elevated (25-44), referral_ready (45+)
+- Server modules: server/fraud/ (seed.ts, aiAnalyst.ts, referralPacketGenerator.ts)
+- AI Analyst uses GPT-4o with strict guardrails - identifies evidence-based patterns, never accuses
+- Workflow gates: Declare Default and Establish Estoppel actions blocked with warning when fraud threshold is elevated/referral_ready
+- Findings require human activation with evidence links before counting toward score
+- Referral packet generation creates JSON manifest with SHA-256 hashes for evidence integrity
+- UI: Fraud tab in EnforcementCaseDetail with risk meter, active findings list, AI suggestions, and referral packet generation button
+- Timeline auto-logging: FraudAssessmentInitiated, FraudFindingActivated, FraudFindingDeactivated, FraudScoreRecalculated, ReferralPacketGenerated
+
 **Future Considerations:**
 - Session store should use PostgreSQL (connect-pg-simple) or Redis in production
 - Email notifications (nodemailer dependency present but unused)
 - Governance admin UI for managing policies and approvals
 - Supervisor approval workflow UI for pending approvals
+- Referral packet PDF/ZIP generation (currently JSON manifest only)
