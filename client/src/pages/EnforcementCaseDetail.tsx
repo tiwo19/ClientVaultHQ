@@ -15,7 +15,7 @@ import {
   ArrowLeft, Loader2, Scale, FileWarning, AlertTriangle, Clock, CheckCircle2, Shield, Send, 
   FileText, Upload, MessageSquare, Calendar, Lock, ChevronRight, Plus, Stamp, Sparkles,
   Download, Gavel, ClipboardCheck, Briefcase, TriangleAlert, ShieldAlert, AlertOctagon,
-  Eye, EyeOff, Gauge, FileSearch, Package
+  Eye, EyeOff, Gauge, FileSearch, Package, Network, UserCheck
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -123,6 +123,443 @@ interface FraudData {
   assessment: FraudAssessment | null;
   findings: FraudFinding[];
   indicators: FraudIndicator[];
+}
+
+// Deficiencies Panel - Missing Document Tracking
+function DeficienciesPanel({ caseId }: { caseId: string }) {
+  const { data: artifacts, isLoading } = useQuery({
+    queryKey: [`/api/enforcement/${caseId}/artifacts`],
+    enabled: !!caseId
+  });
+
+  const { data: letters } = useQuery({
+    queryKey: [`/api/enforcement/${caseId}/deficiency-letters`],
+    enabled: !!caseId
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex justify-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileWarning className="h-5 w-5 text-amber-500" />
+            Document Deficiencies
+          </CardTitle>
+          <CardDescription>
+            Track required documents and generate deficiency letters
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {(!artifacts || (artifacts as any[]).length === 0) ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <FileWarning className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No artifact requirements tracked yet</p>
+              <p className="text-sm">Add required documents to monitor deficiencies</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(artifacts as any[]).map((req: any) => (
+                <div key={req.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <p className="font-medium">{req.ruleId}</p>
+                    <p className="text-sm text-muted-foreground">Status: {req.status}</p>
+                  </div>
+                  <Badge variant={req.status === "received" ? "default" : "destructive"}>
+                    {req.status}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {letters && (letters as any[]).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Deficiency Letters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {(letters as any[]).map((letter: any) => (
+                <div key={letter.id} className="p-3 border rounded-lg">
+                  <p className="font-medium">{letter.letterType}</p>
+                  <p className="text-sm text-muted-foreground">Status: {letter.status}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// Compliance Panel - Party KYC/KYB
+function CompliancePanel({ caseId, partyId }: { caseId: string; partyId: string }) {
+  const hasParty = !!partyId && partyId.length > 0;
+
+  const { data: profile, isLoading } = useQuery({
+    queryKey: [`/api/parties/${partyId}/compliance`],
+    enabled: hasParty
+  });
+
+  const { data: requests } = useQuery({
+    queryKey: [`/api/parties/${partyId}/compliance/requests`],
+    enabled: hasParty
+  });
+
+  if (!hasParty) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ClipboardCheck className="h-5 w-5 text-blue-500" />
+            Party Compliance (KYC/KYB)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8 text-muted-foreground">
+            <ClipboardCheck className="h-12 w-12 mx-auto mb-2 opacity-50" />
+            <p>No counterparty linked to this case</p>
+            <p className="text-sm">Link a counterparty to enable compliance tracking</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex justify-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ClipboardCheck className="h-5 w-5 text-blue-500" />
+            Party Compliance (KYC/KYB)
+          </CardTitle>
+          <CardDescription>
+            Identity verification and compliance status for the counterparty
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!profile ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <ClipboardCheck className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No compliance profile created yet</p>
+              <p className="text-sm">Create a KYC/KYB profile to track required information</p>
+              <Button className="mt-4" variant="outline" size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Create Profile
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span>Profile Type:</span>
+                <Badge>{(profile as any).profileType}</Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Status:</span>
+                <Badge variant={(profile as any).status === "complete" ? "default" : "destructive"}>
+                  {(profile as any).status}
+                </Badge>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {requests && (requests as any[]).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Compliance Requests</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {(requests as any[]).map((req: any) => (
+                <div key={req.id} className="p-3 border rounded-lg">
+                  <p className="font-medium">{req.requestType}</p>
+                  <p className="text-sm text-muted-foreground">Status: {req.status}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// Professionals Panel - Attorney/Paymaster Tracking
+function ProfessionalsPanel({ caseId }: { caseId: string }) {
+  const { data: professionals, isLoading } = useQuery({
+    queryKey: [`/api/enforcement/${caseId}/professionals`],
+    enabled: !!caseId
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex justify-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <UserCheck className="h-5 w-5 text-purple-500" />
+                Professional Roles
+              </CardTitle>
+              <CardDescription>
+                Track attorneys, paymasters, escrow agents, and their required deliverables
+              </CardDescription>
+            </div>
+            <Button size="sm" variant="outline">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Professional
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {(!professionals || (professionals as any[]).length === 0) ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <UserCheck className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No professional roles added yet</p>
+              <p className="text-sm">Add attorneys, paymasters, or escrow agents to track accountability</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(professionals as any[]).map((prof: any) => (
+                <div key={prof.id} className="p-4 border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium capitalize">{prof.roleType.replace(/_/g, " ")}</span>
+                    <Badge variant={prof.status === "active" ? "default" : "secondary"}>
+                      {prof.status}
+                    </Badge>
+                  </div>
+                  {prof.licenseId && (
+                    <p className="text-sm text-muted-foreground">
+                      License: {prof.licenseId} ({prof.licenseState})
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Patterns Panel - Entity Graph Pattern Detection
+function PatternsPanel({ caseId }: { caseId: string }) {
+  const { data: patternHits, isLoading } = useQuery({
+    queryKey: [`/api/enforcement/${caseId}/patterns`],
+    enabled: !!caseId
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex justify-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Network className="h-5 w-5 text-indigo-500" />
+            Pattern Detection
+          </CardTitle>
+          <CardDescription>
+            Cross-case entity matching and suspicious pattern alerts
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {(!patternHits || (patternHits as any[]).length === 0) ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Network className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No pattern matches detected</p>
+              <p className="text-sm">Entities from this case will be matched against other cases automatically</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(patternHits as any[]).map((hit: any) => (
+                <div key={hit.id} className="p-4 border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium">Cluster Match</span>
+                    <Badge variant={
+                      hit.severity === "critical" ? "destructive" :
+                      hit.severity === "elevated" ? "default" : "secondary"
+                    }>
+                      {hit.severity}
+                    </Badge>
+                  </div>
+                  {hit.summary && (
+                    <p className="text-sm text-muted-foreground">{hit.summary}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Contradictions Panel - Claim vs Evidence Analysis
+function ContradictionsPanel({ caseId }: { caseId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: [`/api/enforcement/${caseId}/contradictions`],
+    enabled: !!caseId
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex justify-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const contradictionSet = data ? (data as any).set : null;
+  const items = data ? (data as any).items : [];
+
+  // Thresholds: watch >= 15, elevated >= 30, critical >= 60
+  const getThresholdLevel = (score: number) => {
+    if (score >= 60) return { level: "critical", color: "bg-red-500" };
+    if (score >= 30) return { level: "elevated", color: "bg-orange-500" };
+    if (score >= 15) return { level: "watch", color: "bg-amber-500" };
+    return { level: "none", color: "bg-slate-300" };
+  };
+
+  const threshold = contradictionSet ? getThresholdLevel(contradictionSet.scoreTotal) : { level: "none", color: "bg-slate-300" };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Scale className="h-5 w-5 text-red-500" />
+            Contradictions Analysis
+          </CardTitle>
+          <CardDescription>
+            Detect and document inconsistencies between claims and evidence
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {contradictionSet && (
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">Contradiction Score</span>
+                <span className="text-lg font-bold">{contradictionSet.scoreTotal}</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div 
+                  className={`h-3 rounded-full transition-all ${threshold.color}`}
+                  style={{ width: `${Math.min((contradictionSet.scoreTotal / 60) * 100, 100)}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>0</span>
+                <span>Watch (15)</span>
+                <span>Elevated (30)</span>
+                <span>Critical (60)</span>
+              </div>
+            </div>
+          )}
+
+          {items.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Scale className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No contradictions detected</p>
+              <p className="text-sm">Run AI analysis to scan for inconsistencies in evidence</p>
+              <Button className="mt-4" variant="outline" size="sm">
+                <Sparkles className="h-4 w-4 mr-2" />
+                Run AI Scan
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {items.map((item: any) => (
+                <div key={item.id} className="p-4 border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium">{item.title}</span>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={
+                        item.severity === "critical" ? "destructive" :
+                        item.severity === "material" ? "default" : "secondary"
+                      }>
+                        {item.severity}
+                      </Badge>
+                      <Badge variant="outline">{item.status}</Badge>
+                    </div>
+                  </div>
+                  {item.explanation && (
+                    <p className="text-sm text-muted-foreground">{item.explanation}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-amber-200 bg-amber-50">
+        <CardContent className="pt-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium text-amber-800">Compliance Notice</p>
+              <p className="text-amber-700">
+                All contradiction findings must be evidence-bound. The system never accuses or speculates—
+                it only documents observed inconsistencies with exhibit references for neutral clarification requests.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function FraudAnalysisPanel({ caseId }: { caseId: string }) {
@@ -884,7 +1321,7 @@ export default function EnforcementCaseDetail() {
       </div>
 
       <Tabs defaultValue="notices" className="w-full">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="flex flex-wrap h-auto gap-1 w-full">
           <TabsTrigger value="notices" data-testid="tab-notices">
             Notices ({caseData.notices.length})
           </TabsTrigger>
@@ -897,15 +1334,35 @@ export default function EnforcementCaseDetail() {
           <TabsTrigger value="timeline" data-testid="tab-timeline">
             Timeline
           </TabsTrigger>
+          <TabsTrigger value="deficiencies" data-testid="tab-deficiencies" className="flex items-center gap-1">
+            <FileWarning className="h-4 w-4" />
+            Deficiencies
+          </TabsTrigger>
+          <TabsTrigger value="compliance" data-testid="tab-compliance" className="flex items-center gap-1">
+            <ClipboardCheck className="h-4 w-4" />
+            Compliance
+          </TabsTrigger>
+          <TabsTrigger value="professionals" data-testid="tab-professionals" className="flex items-center gap-1">
+            <UserCheck className="h-4 w-4" />
+            Professionals
+          </TabsTrigger>
+          <TabsTrigger value="patterns" data-testid="tab-patterns" className="flex items-center gap-1">
+            <Network className="h-4 w-4" />
+            Patterns
+          </TabsTrigger>
+          <TabsTrigger value="contradictions" data-testid="tab-contradictions" className="flex items-center gap-1">
+            <Scale className="h-4 w-4" />
+            Contradictions
+          </TabsTrigger>
+          <TabsTrigger value="fraud" data-testid="tab-fraud" className="flex items-center gap-1">
+            <ShieldAlert className="h-4 w-4" />
+            Fraud
+          </TabsTrigger>
           <TabsTrigger value="court-path" data-testid="tab-court-path">
             Court Path
           </TabsTrigger>
           <TabsTrigger value="exports" data-testid="tab-exports">
             Exports
-          </TabsTrigger>
-          <TabsTrigger value="fraud" data-testid="tab-fraud" className="flex items-center gap-1">
-            <ShieldAlert className="h-4 w-4" />
-            Fraud
           </TabsTrigger>
         </TabsList>
 
@@ -1276,6 +1733,26 @@ export default function EnforcementCaseDetail() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="deficiencies" className="mt-4">
+          <DeficienciesPanel caseId={caseId!} />
+        </TabsContent>
+
+        <TabsContent value="compliance" className="mt-4">
+          <CompliancePanel caseId={caseId!} partyId={caseData.counterpartyId || ""} />
+        </TabsContent>
+
+        <TabsContent value="professionals" className="mt-4">
+          <ProfessionalsPanel caseId={caseId!} />
+        </TabsContent>
+
+        <TabsContent value="patterns" className="mt-4">
+          <PatternsPanel caseId={caseId!} />
+        </TabsContent>
+
+        <TabsContent value="contradictions" className="mt-4">
+          <ContradictionsPanel caseId={caseId!} />
         </TabsContent>
 
         <TabsContent value="fraud" className="mt-4">

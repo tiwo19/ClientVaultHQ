@@ -29,11 +29,36 @@ import {
   type FraudFinding, type InsertFraudFinding,
   type ReferralPacket, type InsertReferralPacket,
   type EntityGraphEdge, type InsertEntityGraphEdge,
+  type PatternEntity, type InsertPatternEntity,
+  type EntityLink, type InsertEntityLink,
+  type EntityObservation, type InsertEntityObservation,
+  type PatternCluster, type InsertPatternCluster,
+  type PatternClusterMember, type InsertPatternClusterMember,
+  type CasePatternHit, type InsertCasePatternHit,
+  type RequiredArtifactRule, type InsertRequiredArtifactRule,
+  type CaseArtifactRequirement, type InsertCaseArtifactRequirement,
+  type DeficiencyLetter, type InsertDeficiencyLetter,
+  type PartyComplianceProfile, type InsertPartyComplianceProfile,
+  type PartyComplianceRequest, type InsertPartyComplianceRequest,
+  type ProfessionalRole, type InsertProfessionalRole,
+  type ProfessionalDeliverableRule, type InsertProfessionalDeliverableRule,
+  type ProfessionalCaseDeliverable, type InsertProfessionalCaseDeliverable,
+  type LicensureFlag, type InsertLicensureFlag,
+  type ContradictionSet, type InsertContradictionSet,
+  type ContradictionItem, type InsertContradictionItem,
+  type ContradictionEvidenceLink, type InsertContradictionEvidenceLink,
+  type ContradictionQuestion, type InsertContradictionQuestion,
+  type ContradictionOutput, type InsertContradictionOutput,
   users, parties, persons, agreements, activities, documents, partyRelationships, creditTransactions,
   contactPoints, addresses, engagements, engagementMemberships, engagementParties, engagementAgreements, auditLogs, tasks,
   enforcementCases, enforcementNotices, enforcementDocuments, enforcementResponses, enforcementTimeline,
   enforcementAffidavits, enforcementDeliveryProofs, evidenceExports,
-  fraudIndicators, fraudAssessments, fraudFindings, referralPackets, entityGraphEdges
+  fraudIndicators, fraudAssessments, fraudFindings, referralPackets, entityGraphEdges,
+  patternEntities, entityLinks, entityObservations, patternClusters, patternClusterMembers, casePatternHits,
+  requiredArtifactRules, caseArtifactRequirements, deficiencyLetters,
+  partyComplianceProfiles, partyComplianceRequests,
+  professionalRoles, professionalDeliverableRules, professionalCaseDeliverables, licensureFlags,
+  contradictionSets, contradictionItems, contradictionEvidenceLinks, contradictionQuestions, contradictionOutputs
 } from "@shared/schema";
 import { eq, or, and, desc, sql, inArray } from "drizzle-orm";
 
@@ -1021,6 +1046,492 @@ export class DbStorage implements IStorage {
 
   async deleteEntityGraphEdge(id: string): Promise<void> {
     await db.delete(entityGraphEdges).where(eq(entityGraphEdges.id, id));
+  }
+
+  // ==========================================
+  // PATTERN DETECTION
+  // ==========================================
+
+  // Pattern Entities
+  async getPatternEntity(id: string): Promise<PatternEntity | undefined> {
+    const result = await db.select().from(patternEntities).where(eq(patternEntities.id, id));
+    return result[0];
+  }
+
+  async getPatternEntityByNormalized(entityType: string, normalizedValue: string): Promise<PatternEntity | undefined> {
+    const result = await db.select().from(patternEntities)
+      .where(and(
+        eq(patternEntities.entityType, entityType),
+        eq(patternEntities.normalizedValue, normalizedValue)
+      ));
+    return result[0];
+  }
+
+  async getAllPatternEntities(): Promise<PatternEntity[]> {
+    return await db.select().from(patternEntities).orderBy(desc(patternEntities.createdAt));
+  }
+
+  async createPatternEntity(entity: InsertPatternEntity): Promise<PatternEntity> {
+    const result = await db.insert(patternEntities).values(entity).returning();
+    return result[0];
+  }
+
+  async upsertPatternEntity(entity: InsertPatternEntity): Promise<PatternEntity> {
+    const existing = await this.getPatternEntityByNormalized(entity.entityType, entity.normalizedValue);
+    if (existing) return existing;
+    return this.createPatternEntity(entity);
+  }
+
+  // Entity Links
+  async getEntityLinksByEntity(entityId: string): Promise<EntityLink[]> {
+    return await db.select().from(entityLinks)
+      .where(or(
+        eq(entityLinks.entityIdA, entityId),
+        eq(entityLinks.entityIdB, entityId)
+      ));
+  }
+
+  async createEntityLink(link: InsertEntityLink): Promise<EntityLink> {
+    const result = await db.insert(entityLinks).values(link).returning();
+    return result[0];
+  }
+
+  async deleteEntityLink(id: string): Promise<void> {
+    await db.delete(entityLinks).where(eq(entityLinks.id, id));
+  }
+
+  // Entity Observations
+  async getEntityObservations(entityId: string): Promise<EntityObservation[]> {
+    return await db.select().from(entityObservations)
+      .where(eq(entityObservations.entityId, entityId));
+  }
+
+  async createEntityObservation(observation: InsertEntityObservation): Promise<EntityObservation> {
+    const result = await db.insert(entityObservations).values(observation).returning();
+    return result[0];
+  }
+
+  // Pattern Clusters
+  async getPatternCluster(id: string): Promise<PatternCluster | undefined> {
+    const result = await db.select().from(patternClusters).where(eq(patternClusters.id, id));
+    return result[0];
+  }
+
+  async getPatternClusterByKey(clusterKey: string): Promise<PatternCluster | undefined> {
+    const result = await db.select().from(patternClusters).where(eq(patternClusters.clusterKey, clusterKey));
+    return result[0];
+  }
+
+  async getAllPatternClusters(): Promise<PatternCluster[]> {
+    return await db.select().from(patternClusters).orderBy(desc(patternClusters.score));
+  }
+
+  async createPatternCluster(cluster: InsertPatternCluster): Promise<PatternCluster> {
+    const result = await db.insert(patternClusters).values(cluster).returning();
+    return result[0];
+  }
+
+  async updatePatternCluster(id: string, cluster: Partial<InsertPatternCluster>): Promise<PatternCluster | undefined> {
+    const result = await db.update(patternClusters)
+      .set({ ...cluster, updatedAt: new Date() })
+      .where(eq(patternClusters.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Pattern Cluster Members
+  async getPatternClusterMembers(clusterId: string): Promise<PatternClusterMember[]> {
+    return await db.select().from(patternClusterMembers)
+      .where(eq(patternClusterMembers.clusterId, clusterId));
+  }
+
+  async createPatternClusterMember(member: InsertPatternClusterMember): Promise<PatternClusterMember> {
+    const result = await db.insert(patternClusterMembers).values(member).returning();
+    return result[0];
+  }
+
+  async deletePatternClusterMember(id: string): Promise<void> {
+    await db.delete(patternClusterMembers).where(eq(patternClusterMembers.id, id));
+  }
+
+  // Case Pattern Hits
+  async getCasePatternHits(caseId: string): Promise<CasePatternHit[]> {
+    return await db.select().from(casePatternHits)
+      .where(eq(casePatternHits.enforcementCaseId, caseId))
+      .orderBy(desc(casePatternHits.createdAt));
+  }
+
+  async createCasePatternHit(hit: InsertCasePatternHit): Promise<CasePatternHit> {
+    const result = await db.insert(casePatternHits).values(hit).returning();
+    return result[0];
+  }
+
+  async deleteCasePatternHit(id: string): Promise<void> {
+    await db.delete(casePatternHits).where(eq(casePatternHits.id, id));
+  }
+
+  // ==========================================
+  // DEFICIENCY ENGINE
+  // ==========================================
+
+  // Required Artifact Rules
+  async getAllRequiredArtifactRules(): Promise<RequiredArtifactRule[]> {
+    return await db.select().from(requiredArtifactRules);
+  }
+
+  async getRequiredArtifactRuleByCode(ruleCode: string): Promise<RequiredArtifactRule | undefined> {
+    const result = await db.select().from(requiredArtifactRules)
+      .where(eq(requiredArtifactRules.ruleCode, ruleCode));
+    return result[0];
+  }
+
+  async createRequiredArtifactRule(rule: InsertRequiredArtifactRule): Promise<RequiredArtifactRule> {
+    const result = await db.insert(requiredArtifactRules).values(rule).returning();
+    return result[0];
+  }
+
+  async upsertRequiredArtifactRule(rule: InsertRequiredArtifactRule): Promise<RequiredArtifactRule> {
+    const existing = await this.getRequiredArtifactRuleByCode(rule.ruleCode);
+    if (existing) return existing;
+    return this.createRequiredArtifactRule(rule);
+  }
+
+  // Case Artifact Requirements
+  async getCaseArtifactRequirements(caseId: string): Promise<CaseArtifactRequirement[]> {
+    return await db.select().from(caseArtifactRequirements)
+      .where(eq(caseArtifactRequirements.enforcementCaseId, caseId));
+  }
+
+  async getCaseArtifactRequirement(id: string): Promise<CaseArtifactRequirement | undefined> {
+    const result = await db.select().from(caseArtifactRequirements).where(eq(caseArtifactRequirements.id, id));
+    return result[0];
+  }
+
+  async createCaseArtifactRequirement(req: InsertCaseArtifactRequirement): Promise<CaseArtifactRequirement> {
+    const result = await db.insert(caseArtifactRequirements).values(req).returning();
+    return result[0];
+  }
+
+  async updateCaseArtifactRequirement(id: string, req: Partial<InsertCaseArtifactRequirement>): Promise<CaseArtifactRequirement | undefined> {
+    const result = await db.update(caseArtifactRequirements)
+      .set({ ...req, updatedAt: new Date() })
+      .where(eq(caseArtifactRequirements.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getMissingArtifactRequirements(caseId: string): Promise<CaseArtifactRequirement[]> {
+    return await db.select().from(caseArtifactRequirements)
+      .where(and(
+        eq(caseArtifactRequirements.enforcementCaseId, caseId),
+        eq(caseArtifactRequirements.status, "required")
+      ));
+  }
+
+  // Deficiency Letters
+  async getDeficiencyLetters(caseId: string): Promise<DeficiencyLetter[]> {
+    return await db.select().from(deficiencyLetters)
+      .where(eq(deficiencyLetters.enforcementCaseId, caseId))
+      .orderBy(desc(deficiencyLetters.createdAt));
+  }
+
+  async getDeficiencyLetter(id: string): Promise<DeficiencyLetter | undefined> {
+    const result = await db.select().from(deficiencyLetters).where(eq(deficiencyLetters.id, id));
+    return result[0];
+  }
+
+  async createDeficiencyLetter(letter: InsertDeficiencyLetter): Promise<DeficiencyLetter> {
+    const result = await db.insert(deficiencyLetters).values(letter).returning();
+    return result[0];
+  }
+
+  async updateDeficiencyLetter(id: string, letter: Partial<InsertDeficiencyLetter>): Promise<DeficiencyLetter | undefined> {
+    const result = await db.update(deficiencyLetters)
+      .set({ ...letter, updatedAt: new Date() })
+      .where(eq(deficiencyLetters.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // ==========================================
+  // PARTY COMPLIANCE
+  // ==========================================
+
+  // Party Compliance Profiles
+  async getPartyComplianceProfile(partyId: string): Promise<PartyComplianceProfile | undefined> {
+    const result = await db.select().from(partyComplianceProfiles)
+      .where(eq(partyComplianceProfiles.partyId, partyId));
+    return result[0];
+  }
+
+  async createPartyComplianceProfile(profile: InsertPartyComplianceProfile): Promise<PartyComplianceProfile> {
+    const result = await db.insert(partyComplianceProfiles).values(profile).returning();
+    return result[0];
+  }
+
+  async updatePartyComplianceProfile(id: string, profile: Partial<InsertPartyComplianceProfile>): Promise<PartyComplianceProfile | undefined> {
+    const result = await db.update(partyComplianceProfiles)
+      .set({ ...profile, updatedAt: new Date() })
+      .where(eq(partyComplianceProfiles.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async upsertPartyComplianceProfile(profile: InsertPartyComplianceProfile): Promise<PartyComplianceProfile> {
+    const existing = await this.getPartyComplianceProfile(profile.partyId);
+    if (existing) {
+      return (await this.updatePartyComplianceProfile(existing.id, profile))!;
+    }
+    return this.createPartyComplianceProfile(profile);
+  }
+
+  // Party Compliance Requests
+  async getPartyComplianceRequests(partyId: string): Promise<PartyComplianceRequest[]> {
+    return await db.select().from(partyComplianceRequests)
+      .where(eq(partyComplianceRequests.partyId, partyId))
+      .orderBy(desc(partyComplianceRequests.createdAt));
+  }
+
+  async getPartyComplianceRequestsByCase(caseId: string): Promise<PartyComplianceRequest[]> {
+    return await db.select().from(partyComplianceRequests)
+      .where(eq(partyComplianceRequests.enforcementCaseId, caseId));
+  }
+
+  async createPartyComplianceRequest(request: InsertPartyComplianceRequest): Promise<PartyComplianceRequest> {
+    const result = await db.insert(partyComplianceRequests).values(request).returning();
+    return result[0];
+  }
+
+  async updatePartyComplianceRequest(id: string, request: Partial<InsertPartyComplianceRequest>): Promise<PartyComplianceRequest | undefined> {
+    const result = await db.update(partyComplianceRequests)
+      .set({ ...request, updatedAt: new Date() })
+      .where(eq(partyComplianceRequests.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // ==========================================
+  // PROFESSIONAL ROLES
+  // ==========================================
+
+  // Professional Roles
+  async getProfessionalRoles(caseId: string): Promise<ProfessionalRole[]> {
+    return await db.select().from(professionalRoles)
+      .where(eq(professionalRoles.enforcementCaseId, caseId));
+  }
+
+  async getProfessionalRole(id: string): Promise<ProfessionalRole | undefined> {
+    const result = await db.select().from(professionalRoles).where(eq(professionalRoles.id, id));
+    return result[0];
+  }
+
+  async createProfessionalRole(role: InsertProfessionalRole): Promise<ProfessionalRole> {
+    const result = await db.insert(professionalRoles).values(role).returning();
+    return result[0];
+  }
+
+  async updateProfessionalRole(id: string, role: Partial<InsertProfessionalRole>): Promise<ProfessionalRole | undefined> {
+    const result = await db.update(professionalRoles)
+      .set({ ...role, updatedAt: new Date() })
+      .where(eq(professionalRoles.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteProfessionalRole(id: string): Promise<void> {
+    await db.delete(professionalRoles).where(eq(professionalRoles.id, id));
+  }
+
+  // Professional Deliverable Rules
+  async getAllProfessionalDeliverableRules(): Promise<ProfessionalDeliverableRule[]> {
+    return await db.select().from(professionalDeliverableRules);
+  }
+
+  async getProfessionalDeliverableRulesByType(roleType: string): Promise<ProfessionalDeliverableRule[]> {
+    return await db.select().from(professionalDeliverableRules)
+      .where(eq(professionalDeliverableRules.roleType, roleType));
+  }
+
+  async createProfessionalDeliverableRule(rule: InsertProfessionalDeliverableRule): Promise<ProfessionalDeliverableRule> {
+    const result = await db.insert(professionalDeliverableRules).values(rule).returning();
+    return result[0];
+  }
+
+  // Professional Case Deliverables
+  async getProfessionalCaseDeliverables(professionalRoleId: string): Promise<ProfessionalCaseDeliverable[]> {
+    return await db.select().from(professionalCaseDeliverables)
+      .where(eq(professionalCaseDeliverables.professionalRoleId, professionalRoleId));
+  }
+
+  async createProfessionalCaseDeliverable(deliverable: InsertProfessionalCaseDeliverable): Promise<ProfessionalCaseDeliverable> {
+    const result = await db.insert(professionalCaseDeliverables).values(deliverable).returning();
+    return result[0];
+  }
+
+  async updateProfessionalCaseDeliverable(id: string, deliverable: Partial<InsertProfessionalCaseDeliverable>): Promise<ProfessionalCaseDeliverable | undefined> {
+    const result = await db.update(professionalCaseDeliverables)
+      .set({ ...deliverable, updatedAt: new Date() })
+      .where(eq(professionalCaseDeliverables.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // ==========================================
+  // LICENSURE FLAGS
+  // ==========================================
+
+  async getLicensureFlags(caseId: string): Promise<LicensureFlag[]> {
+    return await db.select().from(licensureFlags)
+      .where(eq(licensureFlags.enforcementCaseId, caseId));
+  }
+
+  async getLicensureFlag(id: string): Promise<LicensureFlag | undefined> {
+    const result = await db.select().from(licensureFlags).where(eq(licensureFlags.id, id));
+    return result[0];
+  }
+
+  async createLicensureFlag(flag: InsertLicensureFlag): Promise<LicensureFlag> {
+    const result = await db.insert(licensureFlags).values(flag).returning();
+    return result[0];
+  }
+
+  async updateLicensureFlag(id: string, flag: Partial<InsertLicensureFlag>): Promise<LicensureFlag | undefined> {
+    const result = await db.update(licensureFlags)
+      .set({ ...flag, updatedAt: new Date() })
+      .where(eq(licensureFlags.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteLicensureFlag(id: string): Promise<void> {
+    await db.delete(licensureFlags).where(eq(licensureFlags.id, id));
+  }
+
+  // ==========================================
+  // CONTRADICTIONS ENGINE
+  // ==========================================
+
+  // Contradiction Sets
+  async getContradictionSet(caseId: string): Promise<ContradictionSet | undefined> {
+    const result = await db.select().from(contradictionSets)
+      .where(eq(contradictionSets.enforcementCaseId, caseId))
+      .orderBy(desc(contradictionSets.createdAt))
+      .limit(1);
+    return result[0];
+  }
+
+  async getContradictionSetById(id: string): Promise<ContradictionSet | undefined> {
+    const result = await db.select().from(contradictionSets).where(eq(contradictionSets.id, id));
+    return result[0];
+  }
+
+  async createContradictionSet(set: InsertContradictionSet): Promise<ContradictionSet> {
+    const result = await db.insert(contradictionSets).values(set).returning();
+    return result[0];
+  }
+
+  async updateContradictionSet(id: string, set: Partial<InsertContradictionSet>): Promise<ContradictionSet | undefined> {
+    const result = await db.update(contradictionSets)
+      .set({ ...set, updatedAt: new Date() })
+      .where(eq(contradictionSets.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Contradiction Items
+  async getContradictionItems(setId: string): Promise<ContradictionItem[]> {
+    return await db.select().from(contradictionItems)
+      .where(eq(contradictionItems.contradictionSetId, setId))
+      .orderBy(desc(contradictionItems.createdAt));
+  }
+
+  async getContradictionItem(id: string): Promise<ContradictionItem | undefined> {
+    const result = await db.select().from(contradictionItems).where(eq(contradictionItems.id, id));
+    return result[0];
+  }
+
+  async createContradictionItem(item: InsertContradictionItem): Promise<ContradictionItem> {
+    const result = await db.insert(contradictionItems).values(item).returning();
+    return result[0];
+  }
+
+  async updateContradictionItem(id: string, item: Partial<InsertContradictionItem>): Promise<ContradictionItem | undefined> {
+    const result = await db.update(contradictionItems)
+      .set({ ...item, updatedAt: new Date() })
+      .where(eq(contradictionItems.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteContradictionItem(id: string): Promise<void> {
+    await db.delete(contradictionItems).where(eq(contradictionItems.id, id));
+  }
+
+  async getConfirmedContradictionItems(setId: string): Promise<ContradictionItem[]> {
+    return await db.select().from(contradictionItems)
+      .where(and(
+        eq(contradictionItems.contradictionSetId, setId),
+        eq(contradictionItems.status, "confirmed")
+      ));
+  }
+
+  // Contradiction Evidence Links
+  async getContradictionEvidenceLinks(itemId: string): Promise<ContradictionEvidenceLink[]> {
+    return await db.select().from(contradictionEvidenceLinks)
+      .where(eq(contradictionEvidenceLinks.contradictionItemId, itemId));
+  }
+
+  async createContradictionEvidenceLink(link: InsertContradictionEvidenceLink): Promise<ContradictionEvidenceLink> {
+    const result = await db.insert(contradictionEvidenceLinks).values(link).returning();
+    return result[0];
+  }
+
+  async deleteContradictionEvidenceLink(id: string): Promise<void> {
+    await db.delete(contradictionEvidenceLinks).where(eq(contradictionEvidenceLinks.id, id));
+  }
+
+  // Contradiction Questions
+  async getContradictionQuestions(itemId: string): Promise<ContradictionQuestion[]> {
+    return await db.select().from(contradictionQuestions)
+      .where(eq(contradictionQuestions.contradictionItemId, itemId));
+  }
+
+  async createContradictionQuestion(question: InsertContradictionQuestion): Promise<ContradictionQuestion> {
+    const result = await db.insert(contradictionQuestions).values(question).returning();
+    return result[0];
+  }
+
+  async updateContradictionQuestion(id: string, question: Partial<InsertContradictionQuestion>): Promise<ContradictionQuestion | undefined> {
+    const result = await db.update(contradictionQuestions)
+      .set({ ...question, updatedAt: new Date() })
+      .where(eq(contradictionQuestions.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Contradiction Outputs
+  async getContradictionOutputs(setId: string): Promise<ContradictionOutput[]> {
+    return await db.select().from(contradictionOutputs)
+      .where(eq(contradictionOutputs.contradictionSetId, setId))
+      .orderBy(desc(contradictionOutputs.createdAt));
+  }
+
+  async getContradictionOutput(id: string): Promise<ContradictionOutput | undefined> {
+    const result = await db.select().from(contradictionOutputs).where(eq(contradictionOutputs.id, id));
+    return result[0];
+  }
+
+  async createContradictionOutput(output: InsertContradictionOutput): Promise<ContradictionOutput> {
+    const result = await db.insert(contradictionOutputs).values(output).returning();
+    return result[0];
+  }
+
+  async updateContradictionOutput(id: string, output: Partial<InsertContradictionOutput>): Promise<ContradictionOutput | undefined> {
+    const result = await db.update(contradictionOutputs)
+      .set({ ...output, updatedAt: new Date() })
+      .where(eq(contradictionOutputs.id, id))
+      .returning();
+    return result[0];
   }
 }
 

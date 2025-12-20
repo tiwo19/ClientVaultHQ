@@ -3571,5 +3571,572 @@ ${recentTimeline.map((a: any) => `- ${a.date}: [${a.type}] ${a.content}`).join("
     }
   });
 
+  // ==========================================
+  // PATTERN DETECTION ROUTES
+  // ==========================================
+
+  // Get all pattern clusters
+  app.get("/api/patterns/clusters", requireAuth, async (req, res) => {
+    try {
+      const clusters = await storage.getAllPatternClusters();
+      res.json(clusters);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get cluster details with members
+  app.get("/api/patterns/clusters/:id", requireAuth, async (req, res) => {
+    try {
+      const cluster = await storage.getPatternCluster(req.params.id);
+      if (!cluster) {
+        return res.status(404).json({ error: "Cluster not found" });
+      }
+      const members = await storage.getPatternClusterMembers(cluster.id);
+      res.json({ cluster, members });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get pattern hits for enforcement case
+  app.get("/api/enforcement/:caseId/patterns", requireAuth, async (req, res) => {
+    try {
+      const hits = await storage.getCasePatternHits(req.params.caseId);
+      res.json(hits);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get all pattern entities
+  app.get("/api/patterns/entities", requireAuth, async (req, res) => {
+    try {
+      const entities = await storage.getAllPatternEntities();
+      res.json(entities);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ==========================================
+  // DEFICIENCY ENGINE ROUTES
+  // ==========================================
+
+  // Get all required artifact rules
+  app.get("/api/deficiency/rules", requireAuth, async (req, res) => {
+    try {
+      const rules = await storage.getAllRequiredArtifactRules();
+      res.json(rules);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get case artifact requirements
+  app.get("/api/enforcement/:caseId/artifacts", requireAuth, async (req, res) => {
+    try {
+      const requirements = await storage.getCaseArtifactRequirements(req.params.caseId);
+      res.json(requirements);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get missing artifact requirements
+  app.get("/api/enforcement/:caseId/artifacts/missing", requireAuth, async (req, res) => {
+    try {
+      const missing = await storage.getMissingArtifactRequirements(req.params.caseId);
+      res.json(missing);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create case artifact requirement
+  app.post("/api/enforcement/:caseId/artifacts", requireAuth, async (req, res) => {
+    try {
+      const requirement = await storage.createCaseArtifactRequirement({
+        ...req.body,
+        enforcementCaseId: req.params.caseId
+      });
+      res.json(requirement);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update case artifact requirement
+  app.put("/api/artifacts/:id", requireAuth, async (req, res) => {
+    try {
+      const requirement = await storage.updateCaseArtifactRequirement(req.params.id, req.body);
+      res.json(requirement);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get deficiency letters for case
+  app.get("/api/enforcement/:caseId/deficiency-letters", requireAuth, async (req, res) => {
+    try {
+      const letters = await storage.getDeficiencyLetters(req.params.caseId);
+      res.json(letters);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create deficiency letter
+  app.post("/api/enforcement/:caseId/deficiency-letters", requireAuth, async (req, res) => {
+    try {
+      const letter = await storage.createDeficiencyLetter({
+        ...req.body,
+        enforcementCaseId: req.params.caseId
+      });
+
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "DeficiencyLetterCreated",
+        description: `Deficiency letter created: ${req.body.letterType}`,
+        createdById: req.session.userId!
+      });
+
+      res.json(letter);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update deficiency letter
+  app.put("/api/deficiency-letters/:id", requireAuth, async (req, res) => {
+    try {
+      const letter = await storage.updateDeficiencyLetter(req.params.id, req.body);
+      res.json(letter);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ==========================================
+  // PARTY COMPLIANCE ROUTES
+  // ==========================================
+
+  // Get party compliance profile
+  app.get("/api/parties/:partyId/compliance", requireAuth, async (req, res) => {
+    try {
+      const profile = await storage.getPartyComplianceProfile(req.params.partyId);
+      res.json(profile || null);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create/update party compliance profile
+  app.post("/api/parties/:partyId/compliance", requireAuth, async (req, res) => {
+    try {
+      const profile = await storage.upsertPartyComplianceProfile({
+        ...req.body,
+        partyId: req.params.partyId
+      });
+      res.json(profile);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get party compliance requests
+  app.get("/api/parties/:partyId/compliance/requests", requireAuth, async (req, res) => {
+    try {
+      const requests = await storage.getPartyComplianceRequests(req.params.partyId);
+      res.json(requests);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get compliance requests for enforcement case
+  app.get("/api/enforcement/:caseId/compliance-requests", requireAuth, async (req, res) => {
+    try {
+      const requests = await storage.getPartyComplianceRequestsByCase(req.params.caseId);
+      res.json(requests);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create party compliance request
+  app.post("/api/parties/:partyId/compliance/requests", requireAuth, async (req, res) => {
+    try {
+      const request = await storage.createPartyComplianceRequest({
+        ...req.body,
+        partyId: req.params.partyId
+      });
+      res.json(request);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update party compliance request
+  app.put("/api/compliance-requests/:id", requireAuth, async (req, res) => {
+    try {
+      const request = await storage.updatePartyComplianceRequest(req.params.id, req.body);
+      res.json(request);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ==========================================
+  // PROFESSIONAL ROLES ROUTES
+  // ==========================================
+
+  // Get professional roles for case
+  app.get("/api/enforcement/:caseId/professionals", requireAuth, async (req, res) => {
+    try {
+      const roles = await storage.getProfessionalRoles(req.params.caseId);
+      res.json(roles);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create professional role
+  app.post("/api/enforcement/:caseId/professionals", requireAuth, async (req, res) => {
+    try {
+      const role = await storage.createProfessionalRole({
+        ...req.body,
+        enforcementCaseId: req.params.caseId
+      });
+
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "ProfessionalRoleAdded",
+        description: `Professional role added: ${req.body.roleType}`,
+        createdById: req.session.userId!
+      });
+
+      res.json(role);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update professional role
+  app.put("/api/professionals/:id", requireAuth, async (req, res) => {
+    try {
+      const role = await storage.updateProfessionalRole(req.params.id, req.body);
+      res.json(role);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Delete professional role
+  app.delete("/api/professionals/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteProfessionalRole(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get deliverables for professional role
+  app.get("/api/professionals/:roleId/deliverables", requireAuth, async (req, res) => {
+    try {
+      const deliverables = await storage.getProfessionalCaseDeliverables(req.params.roleId);
+      res.json(deliverables);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create deliverable for professional role
+  app.post("/api/professionals/:roleId/deliverables", requireAuth, async (req, res) => {
+    try {
+      const deliverable = await storage.createProfessionalCaseDeliverable({
+        ...req.body,
+        professionalRoleId: req.params.roleId
+      });
+      res.json(deliverable);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update professional deliverable
+  app.put("/api/professional-deliverables/:id", requireAuth, async (req, res) => {
+    try {
+      const deliverable = await storage.updateProfessionalCaseDeliverable(req.params.id, req.body);
+      res.json(deliverable);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get all professional deliverable rules
+  app.get("/api/professional-deliverable-rules", requireAuth, async (req, res) => {
+    try {
+      const rules = await storage.getAllProfessionalDeliverableRules();
+      res.json(rules);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ==========================================
+  // LICENSURE FLAGS ROUTES
+  // ==========================================
+
+  // Get licensure flags for case
+  app.get("/api/enforcement/:caseId/licensure", requireAuth, async (req, res) => {
+    try {
+      const flags = await storage.getLicensureFlags(req.params.caseId);
+      res.json(flags);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create licensure flag
+  app.post("/api/enforcement/:caseId/licensure", requireAuth, async (req, res) => {
+    try {
+      const flag = await storage.createLicensureFlag({
+        ...req.body,
+        enforcementCaseId: req.params.caseId
+      });
+
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "LicensureFlagCreated",
+        description: `Licensure flag created: ${req.body.concernCategory} - ${req.body.claimedRole}`,
+        createdById: req.session.userId!
+      });
+
+      res.json(flag);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update licensure flag
+  app.put("/api/licensure/:id", requireAuth, async (req, res) => {
+    try {
+      const flag = await storage.updateLicensureFlag(req.params.id, req.body);
+      res.json(flag);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Delete licensure flag
+  app.delete("/api/licensure/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteLicensureFlag(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ==========================================
+  // CONTRADICTIONS ENGINE ROUTES
+  // ==========================================
+
+  // Get or init contradiction set for case
+  app.get("/api/enforcement/:caseId/contradictions", requireAuth, async (req, res) => {
+    try {
+      let set = await storage.getContradictionSet(req.params.caseId);
+      if (!set) {
+        set = await storage.createContradictionSet({
+          enforcementCaseId: req.params.caseId,
+          status: "draft",
+          scoreTotal: 0,
+          createdByUserId: req.session.userId!
+        });
+      }
+      const items = await storage.getContradictionItems(set.id);
+      res.json({ set, items });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update contradiction set
+  app.put("/api/contradictions/sets/:id", requireAuth, async (req, res) => {
+    try {
+      const set = await storage.updateContradictionSet(req.params.id, req.body);
+      res.json(set);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get contradiction items for set
+  app.get("/api/contradictions/sets/:setId/items", requireAuth, async (req, res) => {
+    try {
+      const items = await storage.getContradictionItems(req.params.setId);
+      res.json(items);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create contradiction item
+  app.post("/api/contradictions/sets/:setId/items", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.createContradictionItem({
+        ...req.body,
+        contradictionSetId: req.params.setId
+      });
+      res.json(item);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update contradiction item
+  app.put("/api/contradictions/items/:id", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.updateContradictionItem(req.params.id, req.body);
+      res.json(item);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Delete contradiction item
+  app.delete("/api/contradictions/items/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteContradictionItem(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get evidence links for contradiction item
+  app.get("/api/contradictions/items/:itemId/evidence", requireAuth, async (req, res) => {
+    try {
+      const links = await storage.getContradictionEvidenceLinks(req.params.itemId);
+      res.json(links);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create evidence link for contradiction item
+  app.post("/api/contradictions/items/:itemId/evidence", requireAuth, async (req, res) => {
+    try {
+      const link = await storage.createContradictionEvidenceLink({
+        ...req.body,
+        contradictionItemId: req.params.itemId
+      });
+      res.json(link);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Delete evidence link
+  app.delete("/api/contradictions/evidence/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteContradictionEvidenceLink(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get questions for contradiction item
+  app.get("/api/contradictions/items/:itemId/questions", requireAuth, async (req, res) => {
+    try {
+      const questions = await storage.getContradictionQuestions(req.params.itemId);
+      res.json(questions);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create question for contradiction item
+  app.post("/api/contradictions/items/:itemId/questions", requireAuth, async (req, res) => {
+    try {
+      const question = await storage.createContradictionQuestion({
+        ...req.body,
+        contradictionItemId: req.params.itemId
+      });
+      res.json(question);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update question
+  app.put("/api/contradictions/questions/:id", requireAuth, async (req, res) => {
+    try {
+      const question = await storage.updateContradictionQuestion(req.params.id, req.body);
+      res.json(question);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get outputs for contradiction set
+  app.get("/api/contradictions/sets/:setId/outputs", requireAuth, async (req, res) => {
+    try {
+      const outputs = await storage.getContradictionOutputs(req.params.setId);
+      res.json(outputs);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Create output for contradiction set
+  app.post("/api/contradictions/sets/:setId/outputs", requireAuth, async (req, res) => {
+    try {
+      const output = await storage.createContradictionOutput({
+        ...req.body,
+        contradictionSetId: req.params.setId
+      });
+      res.json(output);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update output
+  app.put("/api/contradictions/outputs/:id", requireAuth, async (req, res) => {
+    try {
+      const output = await storage.updateContradictionOutput(req.params.id, req.body);
+      res.json(output);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Recalculate contradiction score
+  app.post("/api/contradictions/sets/:setId/recalc", requireAuth, async (req, res) => {
+    try {
+      const items = await storage.getConfirmedContradictionItems(req.params.setId);
+      
+      // Scoring: minor=2, material=5, critical=10, multiplied by confidence (low=1, med=2, high=3)
+      const severityWeights: Record<string, number> = { minor: 2, material: 5, critical: 10 };
+      const confidenceMultipliers: Record<string, number> = { low: 1, medium: 2, high: 3 };
+      
+      let scoreTotal = 0;
+      for (const item of items) {
+        const weight = severityWeights[item.severity] || 2;
+        const multiplier = confidenceMultipliers[item.confidence] || 1;
+        scoreTotal += weight * multiplier;
+      }
+      
+      const set = await storage.updateContradictionSet(req.params.setId, { scoreTotal });
+      res.json(set);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

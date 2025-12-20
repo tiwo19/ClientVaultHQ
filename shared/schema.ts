@@ -1094,3 +1094,659 @@ export const entityGraphEdges = pgTable("entity_graph_edges", {
 export const insertEntityGraphEdgeSchema = createInsertSchema(entityGraphEdges).omit({ id: true, createdAt: true });
 export type InsertEntityGraphEdge = z.infer<typeof insertEntityGraphEdgeSchema>;
 export type EntityGraphEdge = typeof entityGraphEdges.$inferSelect;
+
+// ==========================================
+// PATTERN DETECTION LAYER (ENTITY GRAPH V2)
+// ==========================================
+
+// Expanded entity types for comprehensive pattern detection
+export const patternEntityTypes = [
+  "party",
+  "person",
+  "email",
+  "phone",
+  "address",
+  "domain",
+  "bank_account",
+  "routing_number",
+  "account_number",
+  "wallet",
+  "company_reg",
+  "attorney_bar",
+  "insurer_policy",
+  "ip_address",
+  "device_fingerprint"
+] as const;
+export type PatternEntityType = typeof patternEntityTypes[number];
+
+// Entity link relationship types
+export const entityLinkRelationshipTypes = [
+  "belongs_to",
+  "uses",
+  "same_as",
+  "shares_with",
+  "paid_to",
+  "paid_from",
+  "signed_by",
+  "represented_by",
+  "contacted_via",
+  "delivered_to",
+  "insured_by",
+  "hosted_on",
+  "banked_with"
+] as const;
+export type EntityLinkRelationshipType = typeof entityLinkRelationshipTypes[number];
+
+// Observation types
+export const entityObservationTypes = [
+  "extracted",
+  "user_entered",
+  "verified",
+  "unverified",
+  "disputed"
+] as const;
+export type EntityObservationType = typeof entityObservationTypes[number];
+
+// Confidence levels
+export const confidenceLevels = [
+  "low",
+  "medium",
+  "high"
+] as const;
+export type ConfidenceLevel = typeof confidenceLevels[number];
+
+// Source types for entity links and observations
+export const entitySourceTypes = [
+  "document",
+  "timeline_event",
+  "message",
+  "call",
+  "manual"
+] as const;
+export type EntitySourceType = typeof entitySourceTypes[number];
+
+// Pattern cluster types
+export const patternClusterTypes = [
+  "shared_contact",
+  "shared_bank",
+  "shared_domain",
+  "shared_address",
+  "shared_identity",
+  "multi_case_actor"
+] as const;
+export type PatternClusterType = typeof patternClusterTypes[number];
+
+// Case pattern hit severity levels
+export const casePatternHitSeverities = [
+  "watch",
+  "elevated",
+  "critical"
+] as const;
+export type CasePatternHitSeverity = typeof casePatternHitSeverities[number];
+
+// Entities table - normalized entity values
+export const patternEntities = pgTable("pattern_entities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  entityType: text("entity_type").notNull(),
+  normalizedValue: text("normalized_value").notNull(),
+  displayValue: text("display_value").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPatternEntitySchema = createInsertSchema(patternEntities).omit({ id: true, createdAt: true });
+export type InsertPatternEntity = z.infer<typeof insertPatternEntitySchema>;
+export type PatternEntity = typeof patternEntities.$inferSelect;
+
+// Entity Links table - relationships between entities
+export const entityLinks = pgTable("entity_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  entityIdA: varchar("entity_id_a").notNull().references(() => patternEntities.id, { onDelete: "cascade" }),
+  entityIdB: varchar("entity_id_b").notNull().references(() => patternEntities.id, { onDelete: "cascade" }),
+  relationshipType: text("relationship_type").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceId: text("source_id"),
+  confidence: text("confidence").notNull().default("medium"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEntityLinkSchema = createInsertSchema(entityLinks).omit({ id: true, createdAt: true });
+export type InsertEntityLink = z.infer<typeof insertEntityLinkSchema>;
+export type EntityLink = typeof entityLinks.$inferSelect;
+
+// Entity Observations table - observations about entities
+export const entityObservations = pgTable("entity_observations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  entityId: varchar("entity_id").notNull().references(() => patternEntities.id, { onDelete: "cascade" }),
+  observationType: text("observation_type").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceId: text("source_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEntityObservationSchema = createInsertSchema(entityObservations).omit({ id: true, createdAt: true });
+export type InsertEntityObservation = z.infer<typeof insertEntityObservationSchema>;
+export type EntityObservation = typeof entityObservations.$inferSelect;
+
+// Pattern Clusters table - groups of related entities across cases
+export const patternClusters = pgTable("pattern_clusters", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clusterKey: text("cluster_key").notNull(), // Hash for deduplication
+  clusterType: text("cluster_type").notNull(),
+  score: integer("score").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPatternClusterSchema = createInsertSchema(patternClusters).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPatternCluster = z.infer<typeof insertPatternClusterSchema>;
+export type PatternCluster = typeof patternClusters.$inferSelect;
+
+// Pattern Cluster Members table - entities in a cluster
+export const patternClusterMembers = pgTable("pattern_cluster_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clusterId: varchar("cluster_id").notNull().references(() => patternClusters.id, { onDelete: "cascade" }),
+  entityId: varchar("entity_id").notNull().references(() => patternEntities.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPatternClusterMemberSchema = createInsertSchema(patternClusterMembers).omit({ id: true, createdAt: true });
+export type InsertPatternClusterMember = z.infer<typeof insertPatternClusterMemberSchema>;
+export type PatternClusterMember = typeof patternClusterMembers.$inferSelect;
+
+// Case Pattern Hits table - pattern alerts per enforcement case
+export const casePatternHits = pgTable("case_pattern_hits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enforcementCaseId: varchar("enforcement_case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  clusterId: varchar("cluster_id").notNull().references(() => patternClusters.id, { onDelete: "cascade" }),
+  severity: text("severity").notNull().default("watch"),
+  summary: text("summary"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertCasePatternHitSchema = createInsertSchema(casePatternHits).omit({ id: true, createdAt: true });
+export type InsertCasePatternHit = z.infer<typeof insertCasePatternHitSchema>;
+export type CasePatternHit = typeof casePatternHits.$inferSelect;
+
+// ==========================================
+// MISSING INFORMATION ENFORCEMENT (DEFICIENCY ENGINE)
+// ==========================================
+
+// Artifact applies-to categories
+export const artifactAppliesToTypes = [
+  "enforcement_case",
+  "agreement",
+  "party_role",
+  "attorney_role"
+] as const;
+export type ArtifactAppliesToType = typeof artifactAppliesToTypes[number];
+
+// Required Artifact Rules catalog
+export const requiredArtifactRules = pgTable("required_artifact_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ruleCode: text("rule_code").notNull().unique(), // WIRE_RECEIPT, BANK_STATEMENT, etc.
+  appliesTo: text("applies_to").notNull(), // enforcement_case, agreement, party_role, attorney_role
+  description: text("description").notNull(),
+  required: boolean("required").notNull().default(true),
+  defaultDeadlineDays: integer("default_deadline_days").notNull().default(14),
+  letterSectionTitle: text("letter_section_title"),
+});
+
+export const insertRequiredArtifactRuleSchema = createInsertSchema(requiredArtifactRules).omit({ id: true });
+export type InsertRequiredArtifactRule = z.infer<typeof insertRequiredArtifactRuleSchema>;
+export type RequiredArtifactRule = typeof requiredArtifactRules.$inferSelect;
+
+// Case artifact requirement statuses
+export const caseArtifactStatuses = [
+  "required",
+  "received",
+  "waived",
+  "not_applicable"
+] as const;
+export type CaseArtifactStatus = typeof caseArtifactStatuses[number];
+
+// Case Artifact Requirements - per-case tracking
+export const caseArtifactRequirements = pgTable("case_artifact_requirements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enforcementCaseId: varchar("enforcement_case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  ruleId: varchar("rule_id").notNull().references(() => requiredArtifactRules.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("required"),
+  dueAt: timestamp("due_at"),
+  satisfiedByDocId: varchar("satisfied_by_doc_id").references(() => enforcementDocuments.id, { onDelete: "set null" }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCaseArtifactRequirementSchema = createInsertSchema(caseArtifactRequirements).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCaseArtifactRequirement = z.infer<typeof insertCaseArtifactRequirementSchema>;
+export type CaseArtifactRequirement = typeof caseArtifactRequirements.$inferSelect;
+
+// Deficiency letter types
+export const deficiencyLetterTypes = [
+  "missing_documents",
+  "missing_party_info",
+  "attorney_deficiency",
+  "licensing_verification_request"
+] as const;
+export type DeficiencyLetterType = typeof deficiencyLetterTypes[number];
+
+// Deficiency letter statuses
+export const deficiencyLetterStatuses = [
+  "drafted",
+  "notarized",
+  "sent",
+  "deadline_expired",
+  "cured"
+] as const;
+export type DeficiencyLetterStatus = typeof deficiencyLetterStatuses[number];
+
+// Deficiency Letters table
+export const deficiencyLetters = pgTable("deficiency_letters", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enforcementCaseId: varchar("enforcement_case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  letterType: text("letter_type").notNull(),
+  version: integer("version").notNull().default(1),
+  aiInputSnapshotJson: text("ai_input_snapshot_json"),
+  aiOutputText: text("ai_output_text"),
+  renderedPdfDocId: varchar("rendered_pdf_doc_id").references(() => enforcementDocuments.id, { onDelete: "set null" }),
+  notarizedPdfDocId: varchar("notarized_pdf_doc_id").references(() => enforcementDocuments.id, { onDelete: "set null" }),
+  responseDeadlineAt: timestamp("response_deadline_at"),
+  status: text("status").notNull().default("drafted"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDeficiencyLetterSchema = createInsertSchema(deficiencyLetters).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDeficiencyLetter = z.infer<typeof insertDeficiencyLetterSchema>;
+export type DeficiencyLetter = typeof deficiencyLetters.$inferSelect;
+
+// ==========================================
+// PARTY KYC/KYB COMPLIANCE
+// ==========================================
+
+// Compliance profile types
+export const complianceProfileTypes = [
+  "individual",
+  "business"
+] as const;
+export type ComplianceProfileType = typeof complianceProfileTypes[number];
+
+// Compliance profile statuses
+export const complianceProfileStatuses = [
+  "incomplete",
+  "pending_review",
+  "complete",
+  "failed"
+] as const;
+export type ComplianceProfileStatus = typeof complianceProfileStatuses[number];
+
+// Party Compliance Profiles table
+export const partyComplianceProfiles = pgTable("party_compliance_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  partyId: varchar("party_id").notNull().references(() => parties.id, { onDelete: "cascade" }),
+  profileType: text("profile_type").notNull(), // individual, business
+  fieldsJson: text("fields_json"), // JSON blob of filled fields
+  status: text("status").notNull().default("incomplete"),
+  missingFieldsJson: text("missing_fields_json"), // JSON array of missing field names
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPartyComplianceProfileSchema = createInsertSchema(partyComplianceProfiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPartyComplianceProfile = z.infer<typeof insertPartyComplianceProfileSchema>;
+export type PartyComplianceProfile = typeof partyComplianceProfiles.$inferSelect;
+
+// Compliance request types
+export const complianceRequestTypes = [
+  "kyc_request",
+  "kyb_request",
+  "cis_update"
+] as const;
+export type ComplianceRequestType = typeof complianceRequestTypes[number];
+
+// Compliance request statuses
+export const complianceRequestStatuses = [
+  "drafted",
+  "sent",
+  "satisfied",
+  "expired"
+] as const;
+export type ComplianceRequestStatus = typeof complianceRequestStatuses[number];
+
+// Party Compliance Requests table
+export const partyComplianceRequests = pgTable("party_compliance_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  partyId: varchar("party_id").notNull().references(() => parties.id, { onDelete: "cascade" }),
+  enforcementCaseId: varchar("enforcement_case_id").references(() => enforcementCases.id, { onDelete: "set null" }),
+  requestType: text("request_type").notNull(),
+  deadlineAt: timestamp("deadline_at"),
+  deficiencyLetterId: varchar("deficiency_letter_id").references(() => deficiencyLetters.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("drafted"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPartyComplianceRequestSchema = createInsertSchema(partyComplianceRequests).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPartyComplianceRequest = z.infer<typeof insertPartyComplianceRequestSchema>;
+export type PartyComplianceRequest = typeof partyComplianceRequests.$inferSelect;
+
+// ==========================================
+// ATTORNEY / PAYMASTER ACCOUNTABILITY
+// ==========================================
+
+// Professional role types
+export const professionalRoleTypes = [
+  "attorney",
+  "paymaster",
+  "escrow_agent",
+  "trustee",
+  "broker",
+  "agent"
+] as const;
+export type ProfessionalRoleType = typeof professionalRoleTypes[number];
+
+// Professional role statuses
+export const professionalRoleStatuses = [
+  "active",
+  "inactive",
+  "unknown"
+] as const;
+export type ProfessionalRoleStatus = typeof professionalRoleStatuses[number];
+
+// Professional Roles table
+export const professionalRoles = pgTable("professional_roles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enforcementCaseId: varchar("enforcement_case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  partyId: varchar("party_id").notNull().references(() => parties.id, { onDelete: "cascade" }),
+  roleType: text("role_type").notNull(),
+  licenseState: text("license_state"),
+  licenseId: text("license_id"),
+  contactJson: text("contact_json"), // JSON blob with name, firm, address, phone, email
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProfessionalRoleSchema = createInsertSchema(professionalRoles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProfessionalRole = z.infer<typeof insertProfessionalRoleSchema>;
+export type ProfessionalRole = typeof professionalRoles.$inferSelect;
+
+// Professional Deliverable Rules catalog
+export const professionalDeliverableRules = pgTable("professional_deliverable_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  roleType: text("role_type").notNull(),
+  ruleCode: text("rule_code").notNull(), // ESCROW_LEDGER, DISBURSEMENT_RECEIPTS, etc.
+  description: text("description").notNull(),
+  defaultDeadlineDays: integer("default_deadline_days").notNull().default(14),
+});
+
+export const insertProfessionalDeliverableRuleSchema = createInsertSchema(professionalDeliverableRules).omit({ id: true });
+export type InsertProfessionalDeliverableRule = z.infer<typeof insertProfessionalDeliverableRuleSchema>;
+export type ProfessionalDeliverableRule = typeof professionalDeliverableRules.$inferSelect;
+
+// Professional deliverable statuses
+export const professionalDeliverableStatuses = [
+  "required",
+  "received",
+  "waived",
+  "not_applicable"
+] as const;
+export type ProfessionalDeliverableStatus = typeof professionalDeliverableStatuses[number];
+
+// Professional Case Deliverables table
+export const professionalCaseDeliverables = pgTable("professional_case_deliverables", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  professionalRoleId: varchar("professional_role_id").notNull().references(() => professionalRoles.id, { onDelete: "cascade" }),
+  ruleId: varchar("rule_id").notNull().references(() => professionalDeliverableRules.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("required"),
+  dueAt: timestamp("due_at"),
+  satisfiedByDocId: varchar("satisfied_by_doc_id").references(() => enforcementDocuments.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProfessionalCaseDeliverableSchema = createInsertSchema(professionalCaseDeliverables).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProfessionalCaseDeliverable = z.infer<typeof insertProfessionalCaseDeliverableSchema>;
+export type ProfessionalCaseDeliverable = typeof professionalCaseDeliverables.$inferSelect;
+
+// ==========================================
+// LICENSURE FLAGS (INTERNAL ONLY)
+// ==========================================
+
+// Licensure concern categories
+export const licensureConcernCategories = [
+  "securities",
+  "commodities",
+  "broker",
+  "investment_adviser",
+  "insurance",
+  "escrow",
+  "other"
+] as const;
+export type LicensureConcernCategory = typeof licensureConcernCategories[number];
+
+// Licensure flag statuses
+export const licensureFlagStatuses = [
+  "verify_needed",
+  "verified",
+  "unresolved"
+] as const;
+export type LicensureFlagStatus = typeof licensureFlagStatuses[number];
+
+// Licensure Flags table (internal only)
+export const licensureFlags = pgTable("licensure_flags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enforcementCaseId: varchar("enforcement_case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  partyId: varchar("party_id").notNull().references(() => parties.id, { onDelete: "cascade" }),
+  claimedRole: text("claimed_role").notNull(),
+  concernCategory: text("concern_category").notNull(),
+  evidenceLinks: text("evidence_links"), // JSON array of evidence references
+  status: text("status").notNull().default("verify_needed"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertLicensureFlagSchema = createInsertSchema(licensureFlags).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertLicensureFlag = z.infer<typeof insertLicensureFlagSchema>;
+export type LicensureFlag = typeof licensureFlags.$inferSelect;
+
+// ==========================================
+// CONTRADICTIONS ENGINE
+// ==========================================
+
+// Contradiction set statuses
+export const contradictionSetStatuses = [
+  "draft",
+  "active",
+  "escalated",
+  "resolved",
+  "dismissed"
+] as const;
+export type ContradictionSetStatus = typeof contradictionSetStatuses[number];
+
+// Contradiction Sets table (per enforcement case)
+export const contradictionSets = pgTable("contradiction_sets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enforcementCaseId: varchar("enforcement_case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("draft"),
+  scoreTotal: integer("score_total").notNull().default(0),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertContradictionSetSchema = createInsertSchema(contradictionSets).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertContradictionSet = z.infer<typeof insertContradictionSetSchema>;
+export type ContradictionSet = typeof contradictionSets.$inferSelect;
+
+// Contradiction types
+export const contradictionTypes = [
+  "performance_commitment_vs_ledger",
+  "delivery_promise_vs_missing_receipt",
+  "escrow_claim_vs_no_statement",
+  "insurance_backing_claim_vs_no_policy",
+  "identity_role_claim_vs_corporate_record",
+  "timeline_claim_vs_timestamped_message",
+  "funds_destination_claim_vs_wire_receipt",
+  "other"
+] as const;
+export type ContradictionType = typeof contradictionTypes[number];
+
+// Contradiction item statuses
+export const contradictionItemStatuses = [
+  "candidate",
+  "confirmed",
+  "needs_more_evidence",
+  "resolved",
+  "dismissed"
+] as const;
+export type ContradictionItemStatus = typeof contradictionItemStatuses[number];
+
+// Contradiction item severities
+export const contradictionItemSeverities = [
+  "minor",
+  "material",
+  "critical"
+] as const;
+export type ContradictionItemSeverity = typeof contradictionItemSeverities[number];
+
+// Contradiction Items table
+export const contradictionItems = pgTable("contradiction_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contradictionSetId: varchar("contradiction_set_id").notNull().references(() => contradictionSets.id, { onDelete: "cascade" }),
+  contradictionType: text("contradiction_type").notNull(),
+  title: text("title").notNull(),
+  explanation: text("explanation"), // Neutral, factual explanation
+  confidence: text("confidence").notNull().default("low"),
+  status: text("status").notNull().default("candidate"),
+  severity: text("severity").notNull().default("minor"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertContradictionItemSchema = createInsertSchema(contradictionItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertContradictionItem = z.infer<typeof insertContradictionItemSchema>;
+export type ContradictionItem = typeof contradictionItems.$inferSelect;
+
+// Contradiction evidence sides
+export const contradictionEvidenceSides = ["A", "B"] as const;
+export type ContradictionEvidenceSide = typeof contradictionEvidenceSides[number];
+
+// Contradiction evidence source types
+export const contradictionEvidenceSourceTypes = [
+  "document",
+  "message",
+  "call_transcript",
+  "timeline_event",
+  "delivery_proof",
+  "ledger_entry"
+] as const;
+export type ContradictionEvidenceSourceType = typeof contradictionEvidenceSourceTypes[number];
+
+// Contradiction Evidence Links table
+export const contradictionEvidenceLinks = pgTable("contradiction_evidence_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contradictionItemId: varchar("contradiction_item_id").notNull().references(() => contradictionItems.id, { onDelete: "cascade" }),
+  side: text("side").notNull(), // A or B
+  sourceType: text("source_type").notNull(),
+  sourceId: text("source_id").notNull(),
+  excerpt: text("excerpt"), // Short quote
+  excerptStart: integer("excerpt_start"),
+  excerptEnd: integer("excerpt_end"),
+  occurredAt: timestamp("occurred_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertContradictionEvidenceLinkSchema = createInsertSchema(contradictionEvidenceLinks).omit({ id: true, createdAt: true });
+export type InsertContradictionEvidenceLink = z.infer<typeof insertContradictionEvidenceLinkSchema>;
+export type ContradictionEvidenceLink = typeof contradictionEvidenceLinks.$inferSelect;
+
+// Required evidence types for contradiction questions
+export const contradictionRequiredEvidenceTypes = [
+  "document",
+  "statement",
+  "receipt",
+  "ledger",
+  "policy",
+  "corporate_filing",
+  "other"
+] as const;
+export type ContradictionRequiredEvidenceType = typeof contradictionRequiredEvidenceTypes[number];
+
+// Contradiction question statuses
+export const contradictionQuestionStatuses = [
+  "open",
+  "answered",
+  "waived"
+] as const;
+export type ContradictionQuestionStatus = typeof contradictionQuestionStatuses[number];
+
+// Contradiction Questions table
+export const contradictionQuestions = pgTable("contradiction_questions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contradictionItemId: varchar("contradiction_item_id").notNull().references(() => contradictionItems.id, { onDelete: "cascade" }),
+  question: text("question").notNull(),
+  requiredEvidenceType: text("required_evidence_type").notNull(),
+  status: text("status").notNull().default("open"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertContradictionQuestionSchema = createInsertSchema(contradictionQuestions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertContradictionQuestion = z.infer<typeof insertContradictionQuestionSchema>;
+export type ContradictionQuestion = typeof contradictionQuestions.$inferSelect;
+
+// Contradiction output types
+export const contradictionOutputTypes = [
+  "internal_memo",
+  "clarification_request_letter"
+] as const;
+export type ContradictionOutputType = typeof contradictionOutputTypes[number];
+
+// Contradiction output visibility
+export const contradictionOutputVisibilities = [
+  "internal_only",
+  "shared"
+] as const;
+export type ContradictionOutputVisibility = typeof contradictionOutputVisibilities[number];
+
+// Contradiction output statuses
+export const contradictionOutputStatuses = [
+  "drafted",
+  "notarized",
+  "sent",
+  "closed"
+] as const;
+export type ContradictionOutputStatus = typeof contradictionOutputStatuses[number];
+
+// Contradiction Outputs table
+export const contradictionOutputs = pgTable("contradiction_outputs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contradictionSetId: varchar("contradiction_set_id").notNull().references(() => contradictionSets.id, { onDelete: "cascade" }),
+  outputType: text("output_type").notNull(),
+  version: integer("version").notNull().default(1),
+  aiInputSnapshotJson: text("ai_input_snapshot_json"),
+  aiOutputText: text("ai_output_text"),
+  renderedPdfDocId: varchar("rendered_pdf_doc_id").references(() => enforcementDocuments.id, { onDelete: "set null" }),
+  notarizedPdfDocId: varchar("notarized_pdf_doc_id").references(() => enforcementDocuments.id, { onDelete: "set null" }),
+  responseDeadlineAt: timestamp("response_deadline_at"),
+  visibility: text("visibility").notNull().default("internal_only"),
+  status: text("status").notNull().default("drafted"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertContradictionOutputSchema = createInsertSchema(contradictionOutputs).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertContradictionOutput = z.infer<typeof insertContradictionOutputSchema>;
+export type ContradictionOutput = typeof contradictionOutputs.$inferSelect;
+
+// Enhanced referral packet types
+export const referralPacketTypes = [
+  "state_ag",
+  "regulator",
+  "law_enforcement",
+  "insurer_eo",
+  "professional_conduct",
+  "internal_counsel"
+] as const;
+export type ReferralPacketType = typeof referralPacketTypes[number];
