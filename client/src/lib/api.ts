@@ -458,3 +458,32 @@ export async function bulkUpdateAgreementStatus(ids: string[], status: string) {
   return results;
 }
 
+// ==================== CREDITS ====================
+
+export async function fetchCredits(): Promise<{ credits: number }> {
+  const response = await fetch(`${API_URL}/credits`, { credentials: "include" });
+  return handleResponse(response);
+}
+
+export async function fetchCreditTransactions() {
+  const response = await fetch(`${API_URL}/credits/transactions`, { credentials: "include" });
+  return handleResponse(response);
+}
+
+export async function createCheckoutSession(amountUsd: number): Promise<{ url: string; sessionId: string }> {
+  const response = await fetch(`${API_URL}/stripe/create-checkout-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ amountUsd }),
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+
+export async function verifyCheckoutSession(sessionId: string): Promise<{ success: boolean; added: number }> {
+  const response = await fetch(`${API_URL}/stripe/verify-session/${sessionId}`, {
+    credentials: "include"
+  });
+  return handleResponse(response);
+}
+

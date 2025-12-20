@@ -56,7 +56,7 @@ async function processPdf(filePath: string): Promise<PreparedArtifact> {
   const fileBuffer = fs.readFileSync(filePath);
   
   try {
-    const pdfParseModule = await import("pdf-parse");
+    const pdfParseModule = await import("pdf-parse") as any;
     const pdfParse = pdfParseModule.default || pdfParseModule;
     const pdfData = await pdfParse(fileBuffer);
     const extractedText = pdfData.text?.trim() || "";

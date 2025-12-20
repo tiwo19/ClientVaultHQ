@@ -184,14 +184,14 @@ function DeficienciesPanel({ caseId }: { caseId: string }) {
         </CardContent>
       </Card>
 
-      {letters && (letters as any[]).length > 0 && (
+      {letters && Array.isArray(letters) && letters.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>Deficiency Letters</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(letters as any[]).map((letter: any) => (
+              {letters.map((letter: any) => (
                 <div key={letter.id} className="p-3 border rounded-lg">
                   <p className="font-medium">{letter.letterType}</p>
                   <p className="text-sm text-muted-foreground">Status: {letter.status}</p>
@@ -200,7 +200,7 @@ function DeficienciesPanel({ caseId }: { caseId: string }) {
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -289,14 +289,14 @@ function CompliancePanel({ caseId, partyId }: { caseId: string; partyId: string 
         </CardContent>
       </Card>
 
-      {requests && (requests as any[]).length > 0 && (
+      {requests && Array.isArray(requests) && requests.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>Compliance Requests</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(requests as any[]).map((req: any) => (
+              {requests.map((req: any) => (
                 <div key={req.id} className="p-3 border rounded-lg">
                   <p className="font-medium">{req.requestType}</p>
                   <p className="text-sm text-muted-foreground">Status: {req.status}</p>
@@ -305,7 +305,7 @@ function CompliancePanel({ caseId, partyId }: { caseId: string; partyId: string 
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }
