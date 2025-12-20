@@ -1,0 +1,142 @@
+You are my senior full-stack engineer + compliance architect working inside my Client Vault app.
+
+NEW FEATURE:
+Add a “Fraud & Criminal Indicators Engine” integrated into the Enforcement Case workflow.
+
+GOAL:
+Create an internal, evidence-bound evaluation system that flags potential fraud / regulatory / criminal indicators (SEC/FTC/wire/mail/insurance misrepresentation, etc.) WITHOUT making legal conclusions or accusations. The module must produce a referral-ready packet (facts + exhibits + chronology + hashes) when thresholds are met.
+
+NON-NEGOTIABLE GUARDRAILS:
+- Never label any person/entity as “criminal” or “fraud” in external-facing notices.
+- All findings must be phrased as “Indicators / Allegations under review / Observed facts”.
+- Every indicator finding MUST link to supporting evidence in Client Vault (documents, timeline events, recordings, transcripts). No evidence = cannot mark as “Active”.
+- AI is internal-only: it may suggest indicators and missing evidence, but must not speculate or invent facts.
+
+DATABASE (Drizzle + Postgres):
+Create tables:
+
+fraud_indicators (catalog)
+- id pk
+- code (e.g., MISREP_INDUCEMENT, WIRE_REDIRECT, FAKE_AUTHORITY, INSURANCE_CLAIM, OFFERING_SOLICITATION, DECEPTIVE_PRACTICE, PATTERN_MULTIPLE_VICTIMS, IDENTITY_MISMATCH, MAIL_WIRE_USAGE)
+- category enum: identity | misrepresentation | funds_flow | communications | insurance | regulatory | pattern
+- description text
+- severity_weight int
+- required_evidence_types jsonb (e.g. ["contract","email","wire_receipt","recording","policy_doc"])
+
+fraud_assessments (per enforcement case, versioned)
+- id pk
+- enforcement_case_id fk
+- version int
+- status enum: draft | active | escalated | closed
+- score_total int
+- threshold_level enum: none | watch | elevated | referral_ready
+- created_by_user_id
+- created_at, updated_at
+
+fraud_findings (case-specific)
+- id pk
+- fraud_assessment_id fk
+- fraud_indicator_id fk
+- confidence enum: low | medium | high
+- summary text
+- observed_facts jsonb (array of bullet facts)
+- open_questions jsonb (array)
+- evidence_links jsonb (array of {type, id}) // documents, timeline_events, calls, messages
+- active boolean default false
+- created_by_user_id
+- created_at, updated_at
+
+referral_packets
+- id pk
+- enforcement_case_id fk
+- fraud_assessment_id fk nullable
+- status enum: queued | generating | complete | failed
+- packet_pdf_doc_id fk -> documents nullable
+- packet_zip_doc_id fk -> documents nullable
+- manifest_json jsonb (hashes + exhibit index)
+- created_by_user_id
+- created_at, updated_at
+
+(OPTIONAL but recommended for pattern detection)
+entity_graph_edges
+- id pk
+- entity_type_a (party/person/email/phone/bank_account/domain)
+- entity_id_a
+- entity_type_b
+- entity_id_b
+- relationship_type (shared_email, shared_phone, shared_domain, shared_bank, same_address, etc.)
+- created_at
+
+BACKEND (Express Routes):
+- POST /api/enforcement/:id/fraud/init  -> create assessment v1 from catalog + AI suggestions (inactive until evidence attached)
+- GET /api/enforcement/:id/fraud        -> return assessment + findings + score
+- POST /api/fraud/findings              -> create/update finding, enforce evidence_links requirement to activate
+- POST /api/enforcement/:id/fraud/recalc -> recompute score_total + threshold_level
+- POST /api/enforcement/:id/referral/export -> generate referral packet (PDF+ZIP+CSV manifest with hashes), lock evidence
+
+SCORING:
+- score_total = sum(severity_weight * confidenceMultiplier) for ACTIVE findings only
+- confidence multipliers: low=1, med=2, high=3
+- thresholds:
+  watch >= 10
+  elevated >= 25
+  referral_ready >= 45
+Make these configurable per tenant.
+
+AI ANALYST (Internal Only):
+Implement server/fraud/aiAnalyst.ts:
+Inputs:
+- enforcement case snapshot (agreements, obligations, notices, delivery proofs, responses)
+- selected evidence text extracts (documents/transcripts)
+Outputs:
+- suggested indicator findings with:
+  - indicator code
+  - observed facts (strictly derived from input)
+  - open questions (missing evidence)
+Rules:
+- Do not invent facts.
+- Do not accuse.
+- Use neutral analytic language.
+Store AI suggestions as findings with active=false until evidence attached.
+
+UI (React):
+Add tab on EnforcementCaseView: “Fraud / Indicators”
+Sections:
+1) Risk Meter (threshold level + score)
+2) Findings table (indicator, confidence, active, evidence count, last updated)
+3) Finding detail drawer:
+   - observed facts
+   - open questions
+   - evidence links picker (attach docs/events)
+   - activate toggle (disabled until evidence attached)
+4) “Generate Referral Packet” button (owner/internal only)
+5) “Create Tasks from Open Questions” button
+
+WORKFLOW INTEGRATION:
+Before allowing “Declare Default” or “Establish Estoppel”, show a gate panel:
+- If threshold_level is elevated/referral_ready, prompt:
+  - “Lock evidence now?”
+  - “Generate referral packet now?”
+This is a recommendation only; allow admin to proceed either way but log in audit_log.
+
+EXPORT / REFERRAL PACKET:
+Generate:
+- 1-page executive summary (facts only)
+- chronology (timeline)
+- representations vs reality section (quoted artifacts with exhibit numbers)
+- funds flow summary if evidence exists
+- exhibit index with hashes
+Outputs:
+- PDF + ZIP of exhibits + manifest.json with sha256 for each file
+
+SECURITY / PERMISSIONS:
+- External partners: view-only if granted; never see “referral_ready” labels unless enabled by owner.
+- Findings and referral packets default internal-only visibility.
+
+TESTS:
+- Cannot activate finding without evidence_links meeting required types
+- Score only counts active findings
+- Referral export reproducibility (manifest stable)
+- Permission gates
+
+Implement incrementally: schema -> API -> UI skeleton -> AI analyst -> export generator -> workflow gates.

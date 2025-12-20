@@ -1,7 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertActivitySchema, insertDocumentSchema, insertContactPointSchema, insertAddressSchema, insertEngagementSchema, insertEngagementMembershipSchema, insertEngagementPartySchema, insertEngagementAgreementSchema, engagementRoles, type EngagementRole, insertEnforcementCaseSchema, insertEnforcementNoticeSchema, insertEnforcementDocumentSchema, insertEnforcementResponseSchema, insertEnforcementTimelineSchema, enforcementStatuses, noticeTiers } from "@shared/schema";
+import { insertUserSchema, insertPartySchema, insertPersonSchema, insertAgreementSchema, insertActivitySchema, insertDocumentSchema, insertContactPointSchema, insertAddressSchema, insertEngagementSchema, insertEngagementMembershipSchema, insertEngagementPartySchema, insertEngagementAgreementSchema, engagementRoles, type EngagementRole, insertEnforcementCaseSchema, insertEnforcementNoticeSchema, insertEnforcementDocumentSchema, insertEnforcementResponseSchema, insertEnforcementTimelineSchema, insertEnforcementAffidavitSchema, insertEnforcementDeliveryProofSchema, insertEvidenceExportSchema, enforcementStatuses, noticeTiers } from "@shared/schema";
+import { generateNoticeContent, validateNoticePrerequisites, mapNoticeTypeToTier, getNoticeTitleFromType, type AINoticeType } from "./enforcement/aiAuthor";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import session from "express-session";
@@ -2887,6 +2888,477 @@ ${recentTimeline.map((a: any) => `- ${a.date}: [${a.type}] ${a.content}`).join("
       });
       
       res.status(201).json(event);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ==================== AI NOTICE GENERATION ====================
+
+  // Generate AI notice/affidavit
+  app.post("/api/enforcement/cases/:caseId/generate", requireAuth, async (req, res) => {
+    try {
+      const { noticeType, deadlineDays = 15, overridePrerequisites = false } = req.body;
+      
+      if (!noticeType || !["notice_record", "notice_cure", "notice_default", "notice_estoppel", "affidavit_silence"].includes(noticeType)) {
+        return res.status(400).json({ error: "Invalid notice type" });
+      }
+
+      const enfCase = await storage.getEnforcementCase(req.params.caseId);
+      if (!enfCase) {
+        return res.status(404).json({ error: "Enforcement case not found" });
+      }
+
+      // Check prerequisites
+      const existingNotices = await storage.getEnforcementNotices(req.params.caseId);
+      const prereqCheck = validateNoticePrerequisites(noticeType as AINoticeType, existingNotices);
+      
+      if (!prereqCheck.valid && !overridePrerequisites) {
+        return res.status(400).json({ 
+          error: prereqCheck.error,
+          requiresOverride: true
+        });
+      }
+
+      // Generate using AI
+      const result = await generateNoticeContent(noticeType as AINoticeType, req.params.caseId, deadlineDays);
+      
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || "AI generation failed" });
+      }
+
+      // Create notice or affidavit record
+      if (noticeType === "affidavit_silence") {
+        const affidavit = await storage.createEnforcementAffidavit({
+          caseId: req.params.caseId,
+          affidavitType: "estoppel_silence",
+          title: getNoticeTitleFromType(noticeType as AINoticeType),
+          aiModel: result.model,
+          aiPromptVersion: result.promptVersion,
+          aiInputSnapshot: JSON.stringify(result.inputSnapshot),
+          aiOutputText: result.content,
+          status: "drafted",
+          generatedById: req.session.userId!
+        });
+
+        await storage.createEnforcementTimelineEvent({
+          caseId: req.params.caseId,
+          eventType: "affidavit_generated",
+          description: `Affidavit of Non-Response and Estoppel generated via AI`,
+          createdById: req.session.userId!
+        });
+
+        return res.status(201).json({ type: "affidavit", data: affidavit, content: result.content });
+      } else {
+        const tier = mapNoticeTypeToTier(noticeType as AINoticeType);
+        const title = getNoticeTitleFromType(noticeType as AINoticeType);
+        
+        const notice = await storage.createEnforcementNotice({
+          caseId: req.params.caseId,
+          tier,
+          title,
+          content: result.content,
+          status: "draft",
+          responseDeadlineDays: deadlineDays,
+          createdById: req.session.userId!
+        });
+
+        await storage.createEnforcementTimelineEvent({
+          caseId: req.params.caseId,
+          eventType: "notice_generated",
+          noticeId: notice.id,
+          description: `${title} generated via AI (${tier})`,
+          createdById: req.session.userId!
+        });
+
+        // Log if prerequisites were overridden
+        if (!prereqCheck.valid && overridePrerequisites) {
+          await storage.createEnforcementTimelineEvent({
+            caseId: req.params.caseId,
+            eventType: "admin_override",
+            noticeId: notice.id,
+            description: `Admin override: ${prereqCheck.error}`,
+            createdById: req.session.userId!
+          });
+        }
+
+        return res.status(201).json({ 
+          type: "notice", 
+          data: notice, 
+          content: result.content,
+          inputSnapshot: result.inputSnapshot
+        });
+      }
+    } catch (error: any) {
+      console.error("AI generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== AFFIDAVITS ====================
+
+  // Get affidavits for a case
+  app.get("/api/enforcement/cases/:caseId/affidavits", requireAuth, async (req, res) => {
+    try {
+      const affidavits = await storage.getEnforcementAffidavits(req.params.caseId);
+      res.json(affidavits);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update affidavit (notarization)
+  app.patch("/api/enforcement/affidavits/:id", requireAuth, async (req, res) => {
+    try {
+      const affidavit = await storage.getEnforcementAffidavit(req.params.id);
+      if (!affidavit) {
+        return res.status(404).json({ error: "Affidavit not found" });
+      }
+
+      // If marking as notarized, lock the document
+      if (req.body.status === "notarized" && affidavit.status !== "notarized") {
+        req.body.isLocked = true;
+        req.body.lockedAt = new Date();
+        req.body.notarizedAt = new Date();
+      }
+
+      const updated = await storage.updateEnforcementAffidavit(req.params.id, req.body);
+
+      if (req.body.status === "notarized" && affidavit.status !== "notarized") {
+        await storage.createEnforcementTimelineEvent({
+          caseId: affidavit.caseId,
+          eventType: "affidavit_notarized",
+          description: `Affidavit notarized by ${req.body.notaryName || 'notary'}`,
+          createdById: req.session.userId!
+        });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ==================== DELIVERY PROOFS ====================
+
+  // Get delivery proofs for a notice
+  app.get("/api/enforcement/notices/:noticeId/delivery-proofs", requireAuth, async (req, res) => {
+    try {
+      const proofs = await storage.getEnforcementDeliveryProofs(req.params.noticeId);
+      res.json(proofs);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get all delivery proofs for a case
+  app.get("/api/enforcement/cases/:caseId/delivery-proofs", requireAuth, async (req, res) => {
+    try {
+      const proofs = await storage.getEnforcementDeliveryProofsByCase(req.params.caseId);
+      res.json(proofs);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add delivery proof
+  app.post("/api/enforcement/notices/:noticeId/delivery-proofs", requireAuth, async (req, res) => {
+    try {
+      const notice = await storage.getEnforcementNotice(req.params.noticeId);
+      if (!notice) {
+        return res.status(404).json({ error: "Notice not found" });
+      }
+
+      const parsed = insertEnforcementDeliveryProofSchema.parse({
+        ...req.body,
+        noticeId: req.params.noticeId
+      });
+
+      const proof = await storage.createEnforcementDeliveryProof({
+        ...parsed,
+        uploadedById: req.session.userId!
+      });
+
+      // Update notice status to sent if not already
+      if (notice.status === "draft" || notice.status === "notarized") {
+        await storage.updateEnforcementNotice(notice.id, { 
+          status: "sent",
+          deliverySentAt: parsed.sentAt,
+          deliveryMethod: parsed.method,
+          trackingNumber: parsed.trackingNumber,
+          recipientAddress: parsed.sentToAddress || parsed.sentToEmail
+        });
+      }
+
+      await storage.createEnforcementTimelineEvent({
+        caseId: notice.caseId,
+        eventType: "notice_sent",
+        noticeId: notice.id,
+        description: `Notice sent via ${parsed.method}${parsed.trackingNumber ? ` (tracking: ${parsed.trackingNumber})` : ''}`,
+        sentVia: parsed.method,
+        createdById: req.session.userId!
+      });
+
+      res.status(201).json(proof);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update delivery proof status
+  app.patch("/api/enforcement/delivery-proofs/:id", requireAuth, async (req, res) => {
+    try {
+      const proof = await storage.updateEnforcementDeliveryProof(req.params.id, req.body);
+      
+      if (proof && req.body.deliveryStatus === "delivered") {
+        const notice = await storage.getEnforcementNotice(proof.noticeId);
+        if (notice) {
+          await storage.updateEnforcementNotice(notice.id, {
+            deliveryConfirmedAt: req.body.deliveredAt || new Date()
+          });
+
+          await storage.createEnforcementTimelineEvent({
+            caseId: notice.caseId,
+            eventType: "delivery_confirmed",
+            noticeId: notice.id,
+            description: `Delivery confirmed${req.body.signedBy ? ` - signed by ${req.body.signedBy}` : ''}`,
+            createdById: req.session.userId!
+          });
+        }
+      }
+
+      res.json(proof);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ==================== RESPONSE CLASSIFICATION ====================
+
+  // Classify a response
+  app.patch("/api/enforcement/responses/:id/classify", requireAuth, async (req, res) => {
+    try {
+      const { classification, sufficiency } = req.body;
+      
+      const updated = await storage.updateEnforcementResponse(req.params.id, {
+        classification,
+        sufficiency,
+        classifiedById: req.session.userId!,
+        classifiedAt: new Date()
+      });
+
+      if (updated) {
+        await storage.createEnforcementTimelineEvent({
+          caseId: updated.caseId,
+          eventType: "response_classified",
+          counterpartyResponseId: updated.id,
+          description: `Response classified as ${classification} (${sufficiency})`,
+          createdById: req.session.userId!
+        });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ==================== EVIDENCE EXPORTS ====================
+
+  // Get exports for a case
+  app.get("/api/enforcement/cases/:caseId/exports", requireAuth, async (req, res) => {
+    try {
+      const exports = await storage.getEvidenceExports(req.params.caseId);
+      res.json(exports);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Request evidence binder export
+  app.post("/api/enforcement/cases/:caseId/exports", requireAuth, async (req, res) => {
+    try {
+      const { exportType = "full" } = req.body;
+
+      const enfCase = await storage.getEnforcementCase(req.params.caseId);
+      if (!enfCase) {
+        return res.status(404).json({ error: "Enforcement case not found" });
+      }
+
+      const exportRecord = await storage.createEvidenceExport({
+        caseId: req.params.caseId,
+        exportType,
+        status: "queued",
+        requestedById: req.session.userId!
+      });
+
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "export_requested",
+        description: `Evidence binder export requested (${exportType})`,
+        createdById: req.session.userId!
+      });
+
+      // TODO: In a real implementation, this would trigger an async job
+      // For now, we'll mark it as generating
+      await storage.updateEvidenceExport(exportRecord.id, { status: "generating" });
+
+      res.status(201).json(exportRecord);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ==================== DECLARE DEFAULT / ESTOPPEL (HUMAN IN LOOP) ====================
+
+  // Declare default (requires confirmation)
+  app.post("/api/enforcement/cases/:caseId/declare-default", requireAuth, async (req, res) => {
+    try {
+      const { confirmed, justification } = req.body;
+      
+      if (!confirmed) {
+        return res.status(400).json({ 
+          error: "Default declaration requires explicit confirmation",
+          requiresConfirmation: true
+        });
+      }
+
+      const enfCase = await storage.getEnforcementCase(req.params.caseId);
+      if (!enfCase) {
+        return res.status(404).json({ error: "Enforcement case not found" });
+      }
+
+      // Validate prerequisites
+      if (enfCase.status !== "notice_phase") {
+        return res.status(400).json({ 
+          error: `Cannot declare default from status: ${enfCase.status}. Must be in notice_phase.`
+        });
+      }
+
+      // Check if there's a tier3_default notice sent
+      const notices = await storage.getEnforcementNotices(req.params.caseId);
+      const defaultNotice = notices.find(n => n.tier === "tier3_default" && n.status === "sent");
+      
+      if (!defaultNotice) {
+        return res.status(400).json({ 
+          error: "Cannot declare default. A Tier 3 Default Notice must be sent first."
+        });
+      }
+
+      const updated = await storage.updateEnforcementCase(req.params.caseId, {
+        status: "default_declared",
+        finalDefaultDate: new Date().toISOString().split('T')[0]
+      });
+
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "default_declared",
+        description: `Default formally declared${justification ? `: ${justification}` : ''}`,
+        createdById: req.session.userId!
+      });
+
+      // Create audit log
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "declare_default",
+        entityType: "enforcement_case",
+        entityId: req.params.caseId,
+        metadata: JSON.stringify({ justification, previousStatus: enfCase.status })
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Establish estoppel (requires confirmation)
+  app.post("/api/enforcement/cases/:caseId/establish-estoppel", requireAuth, async (req, res) => {
+    try {
+      const { confirmed, justification } = req.body;
+      
+      if (!confirmed) {
+        return res.status(400).json({ 
+          error: "Estoppel establishment requires explicit confirmation",
+          requiresConfirmation: true
+        });
+      }
+
+      const enfCase = await storage.getEnforcementCase(req.params.caseId);
+      if (!enfCase) {
+        return res.status(404).json({ error: "Enforcement case not found" });
+      }
+
+      if (enfCase.status !== "default_declared") {
+        return res.status(400).json({ 
+          error: `Cannot establish estoppel from status: ${enfCase.status}. Must be in default_declared.`
+        });
+      }
+
+      // Check if there's a tier4_estoppel notice sent
+      const notices = await storage.getEnforcementNotices(req.params.caseId);
+      const estoppelNotice = notices.find(n => n.tier === "tier4_estoppel" && n.status === "sent");
+      
+      if (!estoppelNotice) {
+        return res.status(400).json({ 
+          error: "Cannot establish estoppel. A Tier 4 Estoppel Notice must be sent first."
+        });
+      }
+
+      const updated = await storage.updateEnforcementCase(req.params.caseId, {
+        status: "estoppel_established"
+      });
+
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "estoppel_established",
+        description: `Estoppel by silence formally established${justification ? `: ${justification}` : ''}`,
+        createdById: req.session.userId!
+      });
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "establish_estoppel",
+        entityType: "enforcement_case",
+        entityId: req.params.caseId,
+        metadata: JSON.stringify({ justification, previousStatus: enfCase.status })
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Lock evidence (make case court-ready)
+  app.post("/api/enforcement/cases/:caseId/lock-evidence", requireAuth, async (req, res) => {
+    try {
+      const enfCase = await storage.getEnforcementCase(req.params.caseId);
+      if (!enfCase) {
+        return res.status(404).json({ error: "Enforcement case not found" });
+      }
+
+      const updated = await storage.updateEnforcementCase(req.params.caseId, {
+        evidenceLock: true,
+        status: "litigation_ready"
+      });
+
+      await storage.createEnforcementTimelineEvent({
+        caseId: req.params.caseId,
+        eventType: "evidence_locked",
+        description: "Evidence record locked for litigation - no further modifications allowed",
+        createdById: req.session.userId!
+      });
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "lock_evidence",
+        entityType: "enforcement_case",
+        entityId: req.params.caseId,
+        metadata: JSON.stringify({ previousStatus: enfCase.status })
+      });
+
+      res.json(updated);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }

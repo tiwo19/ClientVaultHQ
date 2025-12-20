@@ -13,10 +13,12 @@ import { Separator } from "@/components/ui/separator";
 import { useState } from "react";
 import { 
   ArrowLeft, Loader2, Scale, FileWarning, AlertTriangle, Clock, CheckCircle2, Shield, Send, 
-  FileText, Upload, MessageSquare, Calendar, Lock, ChevronRight, Plus, Stamp
+  FileText, Upload, MessageSquare, Calendar, Lock, ChevronRight, Plus, Stamp, Sparkles,
+  Download, Gavel, ClipboardCheck, Briefcase, TriangleAlert
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { EnforcementCase, EnforcementNotice, EnforcementDocument, EnforcementResponse, EnforcementTimeline } from "@shared/schema";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import type { EnforcementCase, EnforcementNotice, EnforcementDocument, EnforcementResponse, EnforcementTimeline, EnforcementAffidavit, EvidenceExport } from "@shared/schema";
 
 const CASE_STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   monitoring: { label: "Monitoring", color: "bg-blue-100 text-blue-800 border-blue-200", icon: <Clock className="h-4 w-4" /> },
@@ -59,6 +61,14 @@ interface CaseDetailData extends EnforcementCase {
   timeline: EnforcementTimeline[];
 }
 
+const AI_NOTICE_TYPES: Record<string, { tier: string; label: string }> = {
+  notice_record: { tier: "tier1_administrative", label: "Administrative Notice of Record" },
+  notice_cure: { tier: "tier2_opportunity", label: "Notice of Opportunity to Cure" },
+  notice_default: { tier: "tier3_default", label: "Notice of Default and Demand" },
+  notice_estoppel: { tier: "tier4_estoppel", label: "Notice of Estoppel" },
+  affidavit_silence: { tier: "affidavit", label: "Affidavit of Non-Response" }
+};
+
 export default function EnforcementCaseDetail() {
   const [, params] = useRoute("/enforcement/:id");
   const caseId = params?.id;
@@ -67,6 +77,10 @@ export default function EnforcementCaseDetail() {
   
   const [showNoticeDialog, setShowNoticeDialog] = useState(false);
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [showDefaultConfirm, setShowDefaultConfirm] = useState(false);
+  const [showEstoppelConfirm, setShowEstoppelConfirm] = useState(false);
+  const [confirmJustification, setConfirmJustification] = useState("");
   const [newNotice, setNewNotice] = useState({
     title: "",
     content: "",
@@ -144,6 +158,103 @@ export default function EnforcementCaseDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/enforcement/cases/${caseId}`] });
       toast({ title: "Case status updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const generateAINoticeMutation = useMutation({
+    mutationFn: async ({ noticeType, deadlineDays }: { noticeType: string; deadlineDays: number }) => {
+      const res = await fetch(`/api/enforcement/cases/${caseId}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ noticeType, deadlineDays }),
+        credentials: "include"
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "AI generation failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/enforcement/cases/${caseId}`] });
+      setShowNoticeDialog(false);
+      toast({ 
+        title: data.type === "affidavit" ? "Affidavit Generated" : "Notice Generated",
+        description: "AI has generated the document based on case records"
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "AI Generation Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const declareDefaultMutation = useMutation({
+    mutationFn: async (justification: string) => {
+      const res = await fetch(`/api/enforcement/cases/${caseId}/declare-default`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: true, justification }),
+        credentials: "include"
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to declare default");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/enforcement/cases/${caseId}`] });
+      setShowDefaultConfirm(false);
+      setConfirmJustification("");
+      toast({ title: "Default Declared", description: "Case status updated to Default Declared" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const establishEstoppelMutation = useMutation({
+    mutationFn: async (justification: string) => {
+      const res = await fetch(`/api/enforcement/cases/${caseId}/establish-estoppel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: true, justification }),
+        credentials: "include"
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to establish estoppel");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/enforcement/cases/${caseId}`] });
+      setShowEstoppelConfirm(false);
+      setConfirmJustification("");
+      toast({ title: "Estoppel Established", description: "Case status updated to Estoppel Established" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const requestExportMutation = useMutation({
+    mutationFn: async (exportType: string) => {
+      const res = await fetch(`/api/enforcement/cases/${caseId}/exports`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exportType }),
+        credentials: "include"
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/enforcement/cases/${caseId}`] });
+      toast({ title: "Export Requested", description: "Evidence binder export is being prepared" });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -294,8 +405,31 @@ export default function EnforcementCaseDetail() {
         </CardContent>
       </Card>
 
+      <div className="flex gap-2 mb-4">
+        {caseData.status === "notice_phase" && (
+          <Button 
+            variant="destructive" 
+            onClick={() => setShowDefaultConfirm(true)}
+            data-testid="button-declare-default"
+          >
+            <Gavel className="h-4 w-4 mr-2" />
+            Declare Default
+          </Button>
+        )}
+        {caseData.status === "default_declared" && (
+          <Button 
+            variant="destructive" 
+            onClick={() => setShowEstoppelConfirm(true)}
+            data-testid="button-establish-estoppel"
+          >
+            <Shield className="h-4 w-4 mr-2" />
+            Establish Estoppel
+          </Button>
+        )}
+      </div>
+
       <Tabs defaultValue="notices" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="notices" data-testid="tab-notices">
             Notices ({caseData.notices.length})
           </TabsTrigger>
@@ -306,7 +440,13 @@ export default function EnforcementCaseDetail() {
             Responses ({caseData.responses.length})
           </TabsTrigger>
           <TabsTrigger value="timeline" data-testid="tab-timeline">
-            Timeline ({caseData.timeline.length})
+            Timeline
+          </TabsTrigger>
+          <TabsTrigger value="court-path" data-testid="tab-court-path">
+            Court Path
+          </TabsTrigger>
+          <TabsTrigger value="exports" data-testid="tab-exports">
+            Exports
           </TabsTrigger>
         </TabsList>
 
@@ -531,7 +671,226 @@ export default function EnforcementCaseDetail() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="court-path" className="mt-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Briefcase className="h-5 w-5" />
+                  Small Claims Packet
+                </CardTitle>
+                <CardDescription>Documents needed for small claims court filing</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {[
+                    { label: "Original Agreement/Contract", check: !!caseData.agreementId },
+                    { label: "Administrative Notice (Tier 1)", check: caseData.notices.some(n => n.tier === "tier1_administrative" && n.status === "sent") },
+                    { label: "Opportunity to Cure Notice (Tier 2)", check: caseData.notices.some(n => n.tier === "tier2_opportunity" && n.status === "sent") },
+                    { label: "Notice of Default (Tier 3)", check: caseData.notices.some(n => n.tier === "tier3_default" && n.status === "sent") },
+                    { label: "Delivery Proof for Each Notice", check: caseData.notices.filter(n => n.deliveryConfirmedAt).length >= 2 },
+                    { label: "Affidavit of Non-Response", check: caseData.status === "estoppel_established" || caseData.status === "litigation_ready" },
+                    { label: "Payment/Performance Ledger", check: caseData.documents.some(d => d.category === "payment_ledger") }
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center gap-3 p-2 rounded border">
+                      {item.check ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
+                      ) : (
+                        <div className="h-5 w-5 rounded-full border-2 border-muted flex-shrink-0" />
+                      )}
+                      <span className={item.check ? "text-foreground" : "text-muted-foreground"}>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Scale className="h-5 w-5" />
+                  Circuit Court Packet
+                </CardTitle>
+                <CardDescription>Full litigation package for circuit court</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {[
+                    { label: "All Small Claims Items", check: caseData.notices.filter(n => n.status === "sent").length >= 3 },
+                    { label: "Notice of Estoppel (Tier 4)", check: caseData.notices.some(n => n.tier === "tier4_estoppel" && n.status === "sent") },
+                    { label: "Estoppel Status Established", check: caseData.status === "estoppel_established" || caseData.status === "litigation_ready" },
+                    { label: "Sworn Affidavit Notarized", check: caseData.status === "litigation_ready" },
+                    { label: "Evidence Record Locked", check: caseData.evidenceLock },
+                    { label: "Complete Chronology Export", check: false },
+                    { label: "SHA-256 Hashed Evidence Bundle", check: false }
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center gap-3 p-2 rounded border">
+                      {item.check ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
+                      ) : (
+                        <div className="h-5 w-5 rounded-full border-2 border-muted flex-shrink-0" />
+                      )}
+                      <span className={item.check ? "text-foreground" : "text-muted-foreground"}>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ClipboardCheck className="h-5 w-5" />
+                  Readiness Checklist
+                </CardTitle>
+                <CardDescription>Administrative readiness indicators for enforcement</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {[
+                    { label: "Counterparty Address Verified", check: !!caseData.counterpartyId },
+                    { label: "Governing Law Identified", check: !!caseData.governingLaw },
+                    { label: "Venue/Court Identified", check: !!caseData.venue },
+                    { label: "All Notices Delivered with Proof", check: caseData.notices.filter(n => n.deliveryConfirmedAt).length === caseData.notices.length && caseData.notices.length > 0 },
+                    { label: "Response Deadline Expired", check: caseData.status !== "monitoring" },
+                    { label: "Affidavit Generated", check: caseData.status === "estoppel_established" || caseData.status === "litigation_ready" }
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 rounded border bg-muted/30">
+                      {item.check ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
+                      ) : (
+                        <TriangleAlert className="h-5 w-5 text-amber-500 flex-shrink-0" />
+                      )}
+                      <span className="text-sm">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="exports" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Download className="h-5 w-5" />
+                Evidence Binder Exports
+              </CardTitle>
+              <CardDescription>Generate court-ready evidence packages with SHA-256 hashes</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-3 mb-6">
+                <Button 
+                  onClick={() => requestExportMutation.mutate("small_claims")}
+                  disabled={requestExportMutation.isPending}
+                  className="h-auto py-4 flex-col"
+                  data-testid="button-export-small-claims"
+                >
+                  <Briefcase className="h-6 w-6 mb-2" />
+                  <span>Small Claims Package</span>
+                </Button>
+                <Button 
+                  onClick={() => requestExportMutation.mutate("circuit_court")}
+                  disabled={requestExportMutation.isPending}
+                  className="h-auto py-4 flex-col"
+                  data-testid="button-export-circuit-court"
+                >
+                  <Scale className="h-6 w-6 mb-2" />
+                  <span>Circuit Court Package</span>
+                </Button>
+                <Button 
+                  onClick={() => requestExportMutation.mutate("full")}
+                  disabled={requestExportMutation.isPending}
+                  variant="outline"
+                  className="h-auto py-4 flex-col"
+                  data-testid="button-export-full"
+                >
+                  <Download className="h-6 w-6 mb-2" />
+                  <span>Full Evidence Bundle</span>
+                </Button>
+              </div>
+              <div className="text-center text-sm text-muted-foreground">
+                <p>Export packages include PDF chronology, CSV timeline, and ZIP of all evidence documents.</p>
+                <p className="mt-1">All files are SHA-256 hashed for integrity verification.</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      <AlertDialog open={showDefaultConfirm} onOpenChange={setShowDefaultConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <Gavel className="h-5 w-5" />
+              Declare Default
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This is a significant administrative action. By declaring default, you are formally establishing that the counterparty has failed to perform their obligations under the agreement despite proper notice and opportunity to cure.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Label htmlFor="justification">Justification (optional)</Label>
+            <Textarea
+              id="justification"
+              value={confirmJustification}
+              onChange={e => setConfirmJustification(e.target.value)}
+              placeholder="Enter any notes or justification for this declaration..."
+              rows={3}
+              className="mt-2"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => declareDefaultMutation.mutate(confirmJustification)}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={declareDefaultMutation.isPending}
+            >
+              {declareDefaultMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Confirm Default Declaration
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showEstoppelConfirm} onOpenChange={setShowEstoppelConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <Shield className="h-5 w-5" />
+              Establish Estoppel
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              By establishing estoppel, you are formally determining that the counterparty is estopped from denying or disputing the matters set forth in the administrative notices due to their silence and non-response.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Label htmlFor="estoppel-justification">Justification (optional)</Label>
+            <Textarea
+              id="estoppel-justification"
+              value={confirmJustification}
+              onChange={e => setConfirmJustification(e.target.value)}
+              placeholder="Enter any notes or justification..."
+              rows={3}
+              className="mt-2"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => establishEstoppelMutation.mutate(confirmJustification)}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={establishEstoppelMutation.isPending}
+            >
+              {establishEstoppelMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Confirm Estoppel Establishment
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={showNoticeDialog} onOpenChange={setShowNoticeDialog}>
         <DialogContent className="max-w-lg">
@@ -630,9 +989,38 @@ export default function EnforcementCaseDetail() {
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setShowNoticeDialog(false)}>
               Cancel
+            </Button>
+            <Button 
+              variant="secondary"
+              onClick={() => {
+                if (selectedTier) {
+                  const noticeTypeMap: Record<string, string> = {
+                    tier1_administrative: "notice_record",
+                    tier2_opportunity: "notice_cure",
+                    tier3_default: "notice_default",
+                    tier4_estoppel: "notice_estoppel"
+                  };
+                  const noticeType = noticeTypeMap[selectedTier];
+                  if (noticeType) {
+                    generateAINoticeMutation.mutate({ 
+                      noticeType, 
+                      deadlineDays: newNotice.responseDeadlineDays 
+                    });
+                  }
+                }
+              }}
+              disabled={generateAINoticeMutation.isPending}
+              data-testid="button-generate-ai-notice"
+            >
+              {generateAINoticeMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-2" />
+              )}
+              Generate with AI
             </Button>
             <Button 
               onClick={() => {
@@ -644,7 +1032,7 @@ export default function EnforcementCaseDetail() {
               data-testid="button-submit-notice"
             >
               {createNoticeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Create Notice
+              Create Manually
             </Button>
           </DialogFooter>
         </DialogContent>
