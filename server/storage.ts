@@ -21,9 +21,13 @@ import {
   type EnforcementDocument, type InsertEnforcementDocument,
   type EnforcementResponse, type InsertEnforcementResponse,
   type EnforcementTimeline, type InsertEnforcementTimeline,
+  type EnforcementAffidavit, type InsertEnforcementAffidavit,
+  type EnforcementDeliveryProof, type InsertEnforcementDeliveryProof,
+  type EvidenceExport, type InsertEvidenceExport,
   users, parties, persons, agreements, activities, documents, partyRelationships, creditTransactions,
   contactPoints, addresses, engagements, engagementMemberships, engagementParties, engagementAgreements, auditLogs, tasks,
-  enforcementCases, enforcementNotices, enforcementDocuments, enforcementResponses, enforcementTimeline
+  enforcementCases, enforcementNotices, enforcementDocuments, enforcementResponses, enforcementTimeline,
+  enforcementAffidavits, enforcementDeliveryProofs, evidenceExports
 } from "@shared/schema";
 import { eq, or, and, desc, sql, inArray } from "drizzle-orm";
 
@@ -163,6 +167,24 @@ export interface IStorage {
   // Enforcement Timeline
   getEnforcementTimeline(caseId: string): Promise<EnforcementTimeline[]>;
   createEnforcementTimelineEvent(event: InsertEnforcementTimeline): Promise<EnforcementTimeline>;
+
+  // Enforcement Affidavits
+  getEnforcementAffidavits(caseId: string): Promise<EnforcementAffidavit[]>;
+  getEnforcementAffidavit(id: string): Promise<EnforcementAffidavit | undefined>;
+  createEnforcementAffidavit(affidavit: InsertEnforcementAffidavit): Promise<EnforcementAffidavit>;
+  updateEnforcementAffidavit(id: string, affidavit: Partial<InsertEnforcementAffidavit>): Promise<EnforcementAffidavit | undefined>;
+
+  // Enforcement Delivery Proofs
+  getEnforcementDeliveryProofs(noticeId: string): Promise<EnforcementDeliveryProof[]>;
+  getEnforcementDeliveryProofsByCase(caseId: string): Promise<EnforcementDeliveryProof[]>;
+  createEnforcementDeliveryProof(proof: InsertEnforcementDeliveryProof): Promise<EnforcementDeliveryProof>;
+  updateEnforcementDeliveryProof(id: string, proof: Partial<InsertEnforcementDeliveryProof>): Promise<EnforcementDeliveryProof | undefined>;
+
+  // Evidence Exports
+  getEvidenceExports(caseId: string): Promise<EvidenceExport[]>;
+  getEvidenceExport(id: string): Promise<EvidenceExport | undefined>;
+  createEvidenceExport(exp: InsertEvidenceExport): Promise<EvidenceExport>;
+  updateEvidenceExport(id: string, exp: Partial<InsertEvidenceExport>): Promise<EvidenceExport | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -769,6 +791,86 @@ export class DbStorage implements IStorage {
 
   async createEnforcementTimelineEvent(event: InsertEnforcementTimeline): Promise<EnforcementTimeline> {
     const result = await db.insert(enforcementTimeline).values(event).returning();
+    return result[0];
+  }
+
+  // Enforcement Affidavits
+  async getEnforcementAffidavits(caseId: string): Promise<EnforcementAffidavit[]> {
+    return await db.select().from(enforcementAffidavits)
+      .where(eq(enforcementAffidavits.caseId, caseId))
+      .orderBy(desc(enforcementAffidavits.createdAt));
+  }
+
+  async getEnforcementAffidavit(id: string): Promise<EnforcementAffidavit | undefined> {
+    const result = await db.select().from(enforcementAffidavits).where(eq(enforcementAffidavits.id, id));
+    return result[0];
+  }
+
+  async createEnforcementAffidavit(affidavit: InsertEnforcementAffidavit): Promise<EnforcementAffidavit> {
+    const result = await db.insert(enforcementAffidavits).values(affidavit).returning();
+    return result[0];
+  }
+
+  async updateEnforcementAffidavit(id: string, affidavit: Partial<InsertEnforcementAffidavit>): Promise<EnforcementAffidavit | undefined> {
+    const result = await db.update(enforcementAffidavits)
+      .set({ ...affidavit, updatedAt: new Date() })
+      .where(eq(enforcementAffidavits.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Enforcement Delivery Proofs
+  async getEnforcementDeliveryProofs(noticeId: string): Promise<EnforcementDeliveryProof[]> {
+    return await db.select().from(enforcementDeliveryProofs)
+      .where(eq(enforcementDeliveryProofs.noticeId, noticeId))
+      .orderBy(desc(enforcementDeliveryProofs.sentAt));
+  }
+
+  async getEnforcementDeliveryProofsByCase(caseId: string): Promise<EnforcementDeliveryProof[]> {
+    const notices = await db.select().from(enforcementNotices)
+      .where(eq(enforcementNotices.caseId, caseId));
+    const noticeIds = notices.map(n => n.id);
+    if (noticeIds.length === 0) return [];
+    return await db.select().from(enforcementDeliveryProofs)
+      .where(inArray(enforcementDeliveryProofs.noticeId, noticeIds))
+      .orderBy(desc(enforcementDeliveryProofs.sentAt));
+  }
+
+  async createEnforcementDeliveryProof(proof: InsertEnforcementDeliveryProof): Promise<EnforcementDeliveryProof> {
+    const result = await db.insert(enforcementDeliveryProofs).values(proof).returning();
+    return result[0];
+  }
+
+  async updateEnforcementDeliveryProof(id: string, proof: Partial<InsertEnforcementDeliveryProof>): Promise<EnforcementDeliveryProof | undefined> {
+    const result = await db.update(enforcementDeliveryProofs)
+      .set(proof)
+      .where(eq(enforcementDeliveryProofs.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Evidence Exports
+  async getEvidenceExports(caseId: string): Promise<EvidenceExport[]> {
+    return await db.select().from(evidenceExports)
+      .where(eq(evidenceExports.caseId, caseId))
+      .orderBy(desc(evidenceExports.createdAt));
+  }
+
+  async getEvidenceExport(id: string): Promise<EvidenceExport | undefined> {
+    const result = await db.select().from(evidenceExports).where(eq(evidenceExports.id, id));
+    return result[0];
+  }
+
+  async createEvidenceExport(exp: InsertEvidenceExport): Promise<EvidenceExport> {
+    const result = await db.insert(evidenceExports).values(exp).returning();
+    return result[0];
+  }
+
+  async updateEvidenceExport(id: string, exp: Partial<InsertEvidenceExport>): Promise<EvidenceExport | undefined> {
+    const result = await db.update(evidenceExports)
+      .set(exp)
+      .where(eq(evidenceExports.id, id))
+      .returning();
     return result[0];
   }
 }

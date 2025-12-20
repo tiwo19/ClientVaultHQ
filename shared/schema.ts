@@ -716,17 +716,25 @@ export type EnforcementResponse = typeof enforcementResponses.$inferSelect;
 export const enforcementTimelineEventTypes = [
   "case_created",
   "notice_drafted",
+  "notice_generated",
   "notice_notarized",
   "notice_sent",
   "delivery_confirmed",
+  "delivery_attempted",
+  "delivery_returned",
   "deadline_started",
   "deadline_expired",
   "response_received",
   "response_classified",
   "default_declared",
   "estoppel_established",
+  "affidavit_generated",
+  "affidavit_notarized",
+  "export_requested",
+  "export_completed",
   "evidence_locked",
   "status_changed",
+  "admin_override",
   "admin_note"
 ] as const;
 export type EnforcementTimelineEventType = typeof enforcementTimelineEventTypes[number];
@@ -771,3 +779,153 @@ export const enforcementDocumentCategories = [
   "other"
 ] as const;
 export type EnforcementDocumentCategory = typeof enforcementDocumentCategories[number];
+
+// Affidavit types
+export const affidavitTypes = [
+  "administrative_notice",
+  "non_response",
+  "estoppel_silence",
+  "delivery_proof",
+  "record_custodian"
+] as const;
+export type AffidavitType = typeof affidavitTypes[number];
+
+// Affidavit statuses
+export const affidavitStatuses = [
+  "drafted",
+  "notarized",
+  "filed_ready"
+] as const;
+export type AffidavitStatus = typeof affidavitStatuses[number];
+
+// Enforcement Affidavits table
+export const enforcementAffidavits = pgTable("enforcement_affidavits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  affidavitType: text("affidavit_type").notNull(), // administrative_notice, non_response, etc.
+  version: integer("version").notNull().default(1),
+  title: text("title").notNull(),
+  // AI Generation fields
+  aiModel: text("ai_model"),
+  aiPromptVersion: text("ai_prompt_version"),
+  aiInputSnapshot: text("ai_input_snapshot"), // JSON of the exact inputs used
+  aiOutputText: text("ai_output_text"), // The generated sworn paragraphs
+  // Rendered document
+  renderedPdfPath: text("rendered_pdf_path"),
+  renderedPdfHash: text("rendered_pdf_hash"),
+  // Notarization
+  notarizedPdfPath: text("notarized_pdf_path"),
+  notarizedPdfHash: text("notarized_pdf_hash"),
+  notarizedAt: timestamp("notarized_at"),
+  notaryName: text("notary_name"),
+  notaryCommission: text("notary_commission"),
+  notaryJurisdiction: text("notary_jurisdiction"),
+  notaryExpiration: text("notary_expiration"),
+  // Status
+  status: text("status").notNull().default("drafted"),
+  isLocked: boolean("is_locked").notNull().default(false),
+  lockedAt: timestamp("locked_at"),
+  generatedById: varchar("generated_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEnforcementAffidavitSchema = createInsertSchema(enforcementAffidavits).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEnforcementAffidavit = z.infer<typeof insertEnforcementAffidavitSchema>;
+export type EnforcementAffidavit = typeof enforcementAffidavits.$inferSelect;
+
+// Delivery proof statuses
+export const deliveryProofStatuses = [
+  "sent",
+  "in_transit",
+  "delivered",
+  "attempted",
+  "returned",
+  "unknown"
+] as const;
+export type DeliveryProofStatus = typeof deliveryProofStatuses[number];
+
+// Enforcement Delivery Proofs table (detailed delivery tracking)
+export const enforcementDeliveryProofs = pgTable("enforcement_delivery_proofs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  noticeId: varchar("notice_id").notNull().references(() => enforcementNotices.id, { onDelete: "cascade" }),
+  method: text("method").notNull(), // certified_mail, email, courier, personal_service
+  trackingNumber: text("tracking_number"),
+  sentToAddress: text("sent_to_address"),
+  sentToEmail: text("sent_to_email"),
+  sentAt: timestamp("sent_at").notNull(),
+  deliveryStatus: text("delivery_status").notNull().default("sent"),
+  deliveredAt: timestamp("delivered_at"),
+  // Proof document
+  proofDocumentPath: text("proof_document_path"),
+  proofDocumentHash: text("proof_document_hash"),
+  proofDocumentName: text("proof_document_name"),
+  // Metadata
+  carrierName: text("carrier_name"),
+  signedBy: text("signed_by"),
+  attemptCount: integer("attempt_count").default(1),
+  notes: text("notes"),
+  uploadedById: varchar("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEnforcementDeliveryProofSchema = createInsertSchema(enforcementDeliveryProofs).omit({ id: true, createdAt: true });
+export type InsertEnforcementDeliveryProof = z.infer<typeof insertEnforcementDeliveryProofSchema>;
+export type EnforcementDeliveryProof = typeof enforcementDeliveryProofs.$inferSelect;
+
+// Export statuses
+export const exportStatuses = [
+  "queued",
+  "generating",
+  "complete",
+  "failed"
+] as const;
+export type ExportStatus = typeof exportStatuses[number];
+
+// Evidence Exports table
+export const evidenceExports = pgTable("evidence_exports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").notNull().references(() => enforcementCases.id, { onDelete: "cascade" }),
+  exportType: text("export_type").notNull().default("full"), // full, small_claims, circuit_court
+  status: text("status").notNull().default("queued"),
+  // Export artifacts
+  pdfChronologyPath: text("pdf_chronology_path"),
+  pdfChronologyHash: text("pdf_chronology_hash"),
+  csvTimelinePath: text("csv_timeline_path"),
+  csvTimelineHash: text("csv_timeline_hash"),
+  zipBundlePath: text("zip_bundle_path"),
+  zipBundleHash: text("zip_bundle_hash"),
+  // Manifest with all file hashes
+  manifestJson: text("manifest_json"),
+  // Metadata
+  totalDocuments: integer("total_documents").default(0),
+  totalSizeBytes: integer("total_size_bytes").default(0),
+  errorMessage: text("error_message"),
+  requestedById: varchar("requested_by_id").references(() => users.id, { onDelete: "set null" }),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEvidenceExportSchema = createInsertSchema(evidenceExports).omit({ id: true, createdAt: true });
+export type InsertEvidenceExport = z.infer<typeof insertEvidenceExportSchema>;
+export type EvidenceExport = typeof evidenceExports.$inferSelect;
+
+// Court path types
+export const courtPathTypes = [
+  "small_claims",
+  "circuit_court",
+  "collections",
+  "lien_filing",
+  "judgment_enforcement"
+] as const;
+export type CourtPathType = typeof courtPathTypes[number];
+
+// AI Notice types for generation
+export const aiNoticeTypes = [
+  "notice_record",
+  "notice_cure",
+  "notice_default",
+  "notice_estoppel",
+  "affidavit_silence"
+] as const;
+export type AINoticeType = typeof aiNoticeTypes[number];
