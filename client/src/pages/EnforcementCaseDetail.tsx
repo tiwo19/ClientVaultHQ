@@ -14,7 +14,8 @@ import { useState } from "react";
 import { 
   ArrowLeft, Loader2, Scale, FileWarning, AlertTriangle, Clock, CheckCircle2, Shield, Send, 
   FileText, Upload, MessageSquare, Calendar, Lock, ChevronRight, Plus, Stamp, Sparkles,
-  Download, Gavel, ClipboardCheck, Briefcase, TriangleAlert
+  Download, Gavel, ClipboardCheck, Briefcase, TriangleAlert, ShieldAlert, AlertOctagon,
+  Eye, EyeOff, Gauge, FileSearch, Package
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -68,6 +69,420 @@ const AI_NOTICE_TYPES: Record<string, { tier: string; label: string }> = {
   notice_estoppel: { tier: "tier4_estoppel", label: "Notice of Estoppel" },
   affidavit_silence: { tier: "affidavit", label: "Affidavit of Non-Response" }
 };
+
+const THRESHOLD_CONFIG: Record<string, { label: string; color: string; bgColor: string; description: string }> = {
+  none: { label: "No Indicators", color: "text-slate-600", bgColor: "bg-slate-100", description: "No fraud indicators detected" },
+  watch: { label: "Watch Level", color: "text-amber-600", bgColor: "bg-amber-100", description: "Some indicators present - monitoring recommended" },
+  elevated: { label: "Elevated Risk", color: "text-orange-600", bgColor: "bg-orange-100", description: "Significant indicators - review before proceeding" },
+  referral_ready: { label: "Referral Ready", color: "text-red-600", bgColor: "bg-red-100", description: "Strong fraud pattern - consider law enforcement referral" }
+};
+
+const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ReactNode }> = {
+  identity: { label: "Identity", icon: <Eye className="h-4 w-4" /> },
+  misrepresentation: { label: "Misrepresentation", icon: <FileSearch className="h-4 w-4" /> },
+  funds_flow: { label: "Funds Flow", icon: <AlertOctagon className="h-4 w-4" /> },
+  communications: { label: "Communications", icon: <MessageSquare className="h-4 w-4" /> },
+  insurance: { label: "Insurance", icon: <Shield className="h-4 w-4" /> },
+  regulatory: { label: "Regulatory", icon: <Scale className="h-4 w-4" /> },
+  pattern: { label: "Pattern", icon: <Gauge className="h-4 w-4" /> }
+};
+
+interface FraudIndicator {
+  id: string;
+  code: string;
+  category: string;
+  description: string;
+  severityWeight: number;
+  legalCitations: string | null;
+  requiredEvidence: string | null;
+  active: boolean;
+}
+
+interface FraudFinding {
+  id: string;
+  fraudAssessmentId: string;
+  fraudIndicatorId: string;
+  confidence: "low" | "medium" | "high";
+  summary: string | null;
+  observedFacts: string[];
+  openQuestions: string[];
+  evidenceLinks: Array<{ type: string; id: string }>;
+  active: boolean;
+  indicator?: FraudIndicator;
+}
+
+interface FraudAssessment {
+  id: string;
+  enforcementCaseId: string;
+  scoreTotal: number;
+  thresholdLevel: "none" | "watch" | "elevated" | "referral_ready";
+  lastRunAt: string | null;
+}
+
+interface FraudData {
+  assessment: FraudAssessment | null;
+  findings: FraudFinding[];
+  indicators: FraudIndicator[];
+}
+
+function FraudAnalysisPanel({ caseId }: { caseId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: fraudData, isLoading } = useQuery<FraudData>({
+    queryKey: [`/api/enforcement/${caseId}/fraud`],
+    enabled: !!caseId
+  });
+
+  const initMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/enforcement/${caseId}/fraud/init`, {
+        method: "POST",
+        credentials: "include"
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/enforcement/${caseId}/fraud`] });
+      toast({ title: "Fraud analysis initiated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const recalcMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/enforcement/${caseId}/fraud/recalc`, {
+        method: "POST",
+        credentials: "include"
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/enforcement/${caseId}/fraud`] });
+      toast({ title: "Score recalculated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const toggleFindingMutation = useMutation({
+    mutationFn: async (finding: FraudFinding) => {
+      const res = await fetch(`/api/fraud/findings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: finding.id,
+          fraudAssessmentId: finding.fraudAssessmentId,
+          fraudIndicatorId: finding.fraudIndicatorId,
+          confidence: finding.confidence,
+          summary: finding.summary,
+          observedFacts: finding.observedFacts,
+          openQuestions: finding.openQuestions,
+          evidenceLinks: finding.evidenceLinks,
+          active: !finding.active
+        }),
+        credentials: "include"
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update finding");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/enforcement/${caseId}/fraud`] });
+      recalcMutation.mutate();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const generateReferralMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/enforcement/${caseId}/referral/export`, {
+        method: "POST",
+        credentials: "include"
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/enforcement/${caseId}/fraud`] });
+      toast({ title: "Referral packet generated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  if (isLoading) {
+    return (
+      <Card className="text-center py-12">
+        <CardContent>
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+          <p className="mt-2 text-muted-foreground">Loading fraud analysis...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!fraudData?.assessment) {
+    return (
+      <Card className="text-center py-12">
+        <CardContent>
+          <ShieldAlert className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium mb-2">Fraud & Criminal Indicators Engine</h3>
+          <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+            AI-powered analysis identifies potential fraud patterns from case evidence. 
+            All findings require human activation and evidence linking before affecting the case.
+          </p>
+          <Button 
+            onClick={() => initMutation.mutate()} 
+            disabled={initMutation.isPending}
+            data-testid="button-init-fraud-analysis"
+          >
+            {initMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Sparkles className="h-4 w-4 mr-2" />
+            Initialize AI Analysis
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { assessment, findings } = fraudData;
+  const thresholdConfig = THRESHOLD_CONFIG[assessment.thresholdLevel];
+  const activeFindings = findings.filter(f => f.active);
+  const suggestedFindings = findings.filter(f => !f.active);
+
+  const scorePercentage = Math.min((assessment.scoreTotal / 60) * 100, 100);
+
+  return (
+    <div className="space-y-6">
+      <Card className={`border-2 ${thresholdConfig.bgColor}`}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-3 rounded-full ${thresholdConfig.bgColor}`}>
+                <Gauge className={`h-8 w-8 ${thresholdConfig.color}`} />
+              </div>
+              <div>
+                <CardTitle className={`text-xl ${thresholdConfig.color}`}>
+                  {thresholdConfig.label}
+                </CardTitle>
+                <CardDescription>{thresholdConfig.description}</CardDescription>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className={`text-3xl font-bold ${thresholdConfig.color}`}>
+                {assessment.scoreTotal}
+              </div>
+              <p className="text-xs text-muted-foreground">Risk Score</p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="h-3 bg-slate-200 rounded-full overflow-hidden mb-4">
+            <div 
+              className={`h-full transition-all duration-500 ${
+                assessment.thresholdLevel === "referral_ready" ? "bg-red-500" :
+                assessment.thresholdLevel === "elevated" ? "bg-orange-500" :
+                assessment.thresholdLevel === "watch" ? "bg-amber-500" : "bg-slate-400"
+              }`}
+              style={{ width: `${scorePercentage}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>0 - None</span>
+            <span>10 - Watch</span>
+            <span>25 - Elevated</span>
+            <span>45+ Referral</span>
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => recalcMutation.mutate()}
+              disabled={recalcMutation.isPending}
+              data-testid="button-recalc-score"
+            >
+              {recalcMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Recalculate Score
+            </Button>
+            {assessment.thresholdLevel === "referral_ready" && (
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={() => generateReferralMutation.mutate()}
+                disabled={generateReferralMutation.isPending}
+                data-testid="button-generate-referral"
+              >
+                {generateReferralMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                <Package className="h-4 w-4 mr-2" />
+                Generate Referral Packet
+              </Button>
+            )}
+          </div>
+          {assessment.lastRunAt && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Last analyzed: {new Date(assessment.lastRunAt).toLocaleString()}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {activeFindings.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <AlertOctagon className="h-5 w-5 text-red-600" />
+              Active Findings ({activeFindings.length})
+            </CardTitle>
+            <CardDescription>
+              These indicators are counting toward the risk score
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {activeFindings.map(finding => (
+                <div 
+                  key={finding.id} 
+                  className="flex items-start justify-between p-3 border rounded-lg bg-red-50 border-red-200"
+                  data-testid={`finding-active-${finding.id}`}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      {finding.indicator && CATEGORY_CONFIG[finding.indicator.category]?.icon}
+                      <span className="font-medium">{finding.indicator?.code}</span>
+                      <Badge variant={finding.confidence === "high" ? "destructive" : finding.confidence === "medium" ? "default" : "secondary"}>
+                        {finding.confidence}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        +{finding.indicator ? finding.indicator.severityWeight * (finding.confidence === "high" ? 3 : finding.confidence === "medium" ? 2 : 1) : 0} pts
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{finding.indicator?.description}</p>
+                    {finding.summary && (
+                      <p className="text-sm mt-1 italic">"{finding.summary}"</p>
+                    )}
+                    {finding.evidenceLinks.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {finding.evidenceLinks.length} evidence link(s)
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleFindingMutation.mutate(finding)}
+                    disabled={toggleFindingMutation.isPending}
+                    data-testid={`button-deactivate-${finding.id}`}
+                  >
+                    <EyeOff className="h-4 w-4 mr-1" />
+                    Deactivate
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {suggestedFindings.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <FileSearch className="h-5 w-5 text-amber-600" />
+              AI Suggestions ({suggestedFindings.length})
+            </CardTitle>
+            <CardDescription>
+              Potential indicators identified by AI - activate with evidence to count toward score
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {suggestedFindings.map(finding => (
+                <div 
+                  key={finding.id} 
+                  className="flex items-start justify-between p-3 border rounded-lg hover:bg-slate-50"
+                  data-testid={`finding-suggested-${finding.id}`}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      {finding.indicator && CATEGORY_CONFIG[finding.indicator.category]?.icon}
+                      <span className="font-medium">{finding.indicator?.code}</span>
+                      <Badge variant="outline">{finding.confidence}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{finding.indicator?.description}</p>
+                    {finding.summary && (
+                      <p className="text-sm mt-1 italic">"{finding.summary}"</p>
+                    )}
+                    {finding.openQuestions.length > 0 && (
+                      <div className="mt-2 text-xs">
+                        <span className="font-medium">Open Questions:</span>
+                        <ul className="list-disc list-inside text-muted-foreground">
+                          {finding.openQuestions.slice(0, 2).map((q, i) => (
+                            <li key={i}>{q}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (finding.evidenceLinks.length === 0) {
+                        toast({ 
+                          title: "Evidence Required", 
+                          description: "Link evidence documents before activating this finding",
+                          variant: "destructive"
+                        });
+                        return;
+                      }
+                      toggleFindingMutation.mutate(finding);
+                    }}
+                    disabled={toggleFindingMutation.isPending}
+                    data-testid={`button-activate-${finding.id}`}
+                  >
+                    <Eye className="h-4 w-4 mr-1" />
+                    Activate
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="bg-slate-50">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium text-slate-600">Important Notice</CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs text-muted-foreground space-y-2">
+          <p>
+            <strong>This system does not accuse anyone of fraud.</strong> It identifies patterns 
+            in case evidence that may warrant further investigation by qualified professionals.
+          </p>
+          <p>
+            All AI suggestions are advisory only and require human review and activation. 
+            Findings cannot be activated without linking to specific evidence documents.
+          </p>
+          <p>
+            Referral packets are prepared for law enforcement review only and do not constitute 
+            legal findings or accusations.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 export default function EnforcementCaseDetail() {
   const [, params] = useRoute("/enforcement/:id");
@@ -429,7 +844,7 @@ export default function EnforcementCaseDetail() {
       </div>
 
       <Tabs defaultValue="notices" className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="notices" data-testid="tab-notices">
             Notices ({caseData.notices.length})
           </TabsTrigger>
@@ -447,6 +862,10 @@ export default function EnforcementCaseDetail() {
           </TabsTrigger>
           <TabsTrigger value="exports" data-testid="tab-exports">
             Exports
+          </TabsTrigger>
+          <TabsTrigger value="fraud" data-testid="tab-fraud" className="flex items-center gap-1">
+            <ShieldAlert className="h-4 w-4" />
+            Fraud
           </TabsTrigger>
         </TabsList>
 
@@ -817,6 +1236,10 @@ export default function EnforcementCaseDetail() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="fraud" className="mt-4">
+          <FraudAnalysisPanel caseId={caseId!} />
         </TabsContent>
       </Tabs>
 
