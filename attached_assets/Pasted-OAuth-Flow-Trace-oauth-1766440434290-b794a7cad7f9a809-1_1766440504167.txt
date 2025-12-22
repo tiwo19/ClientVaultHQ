@@ -1,0 +1,103 @@
+OAuth Flow Trace
+oauth_1766440434290_b794a7cad7f9a809
+
+1.
+AUTHORIZE_REQUEST
+INFO
+0ms
+GET
+/api/oauth/authorize
+→ redirect_uri: https://workdigitalcorrine.com/api/auth/callback
+→ client_id: client_caae6ad9782d9bb1d245e7165812e255
+→ scope: openid email profile
+User: jking@workdigital.com
+IP: 34.44.228.73
+User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+Response Details:
+{
+  "response_type": "code",
+  "has_state": true,
+  "has_code_challenge": true,
+  "code_challenge_method": "S256",
+  "rate_limit_remaining": 59
+}
+12/22/2025, 3:53:54 PM
+2.
+APP_RESOLVED
+INFO
+86ms
+GET
+/api/oauth/authorize
+→ redirect_uri: https://workdigitalcorrine.com/api/auth/callback
+→ client_id: client_caae6ad9782d9bb1d245e7165812e255
+→ scope: openid email profile
+App: Corrine Extension
+User: jking@workdigital.com
+IP: 34.44.228.73
+User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+Response Details:
+{
+  "appId": "86ef680f-617f-4d17-a1cc-783cf82774e5",
+  "appName": "Corrine Extension"
+}
+12/22/2025, 3:53:54 PM
+3.
+REDIRECT_URI_VALIDATED
+INFO
+110ms
+GET
+/api/oauth/authorize
+→ redirect_uri: https://workdigitalcorrine.com/api/auth/callback
+→ client_id: client_caae6ad9782d9bb1d245e7165812e255
+→ scope: openid email profile
+App: Corrine Extension
+User: jking@workdigital.com
+IP: 34.44.228.73
+User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+12/22/2025, 3:53:54 PM
+4.
+PKCE_VALIDATED
+INFO
+133ms
+GET
+/api/oauth/authorize
+→ redirect_uri: https://workdigitalcorrine.com/api/auth/callback
+→ client_id: client_caae6ad9782d9bb1d245e7165812e255
+→ scope: openid email profile
+App: Corrine Extension
+User: jking@workdigital.com
+IP: 34.44.228.73
+User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+12/22/2025, 3:53:54 PM
+5.
+CODE_CREATED
+SUCCESS
+179ms
+GET
+/api/oauth/authorize
+→ redirect_uri: https://workdigitalcorrine.com/api/auth/callback
+→ client_id: client_caae6ad9782d9bb1d245e7165812e255
+→ scope: openid email profile
+App: Corrine Extension
+User: jking@workdigital.com
+IP: 34.44.228.73
+User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+Response Details:
+{
+  "codePrefix": "d48e6cb6"
+}
+12/22/2025, 3:53:54 PM
+6.
+AUTHORIZE_SUCCESS
+SUCCESS
+222ms
+GET
+/api/oauth/authorize
+→ redirect_uri: https://workdigitalcorrine.com/api/auth/callback
+→ client_id: client_caae6ad9782d9bb1d245e7165812e255
+→ scope: openid email profile
+App: Corrine Extension
+User: jking@workdigital.com
+IP: 34.44.228.73
+User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+12/22/2025, 3:53:54 PM

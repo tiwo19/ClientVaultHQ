@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File, History, CheckSquare, Circle, CheckCircle2, Bot, Send, FileDown, ExternalLink } from "lucide-react";
+import { ArrowLeft, Edit, Save, Users, Building2, FileText, Briefcase, Plus, Trash2, Loader2, Calendar, Shield, Clock, MessageSquare, Phone, Mail, FileUp, AlertCircle, Download, File, History, CheckSquare, Circle, CheckCircle2, Bot, Send, FileDown, ExternalLink, Upload, X } from "lucide-react";
 import { useState, useMemo, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -72,6 +72,8 @@ export default function EngagementDetail() {
   const [timelineTypeFilter, setTimelineTypeFilter] = useState<string>("all");
   const [timelineStartDate, setTimelineStartDate] = useState<string>("");
   const [timelineEndDate, setTimelineEndDate] = useState<string>("");
+  const [activityAttachment, setActivityAttachment] = useState<File | null>(null);
+  const activityFileInputRef = useRef<HTMLInputElement>(null);
 
   // Documents state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -397,21 +399,44 @@ export default function EngagementDetail() {
 
   // Timeline mutations
   const addActivityMutation = useMutation({
-    mutationFn: async (data: { type: string; content: string }) => {
+    mutationFn: async (data: { type: string; content: string; file?: File | null }) => {
+      let documentId: string | null = null;
+      
+      if (data.file) {
+        const formData = new FormData();
+        formData.append("file", data.file);
+        formData.append("category", "Other");
+        
+        const uploadRes = await fetch(`/api/engagements/${id}/documents`, {
+          method: "POST",
+          credentials: "include",
+          body: formData
+        });
+        if (!uploadRes.ok) throw new Error("Failed to upload attachment");
+        const uploadResult = await uploadRes.json();
+        documentId = uploadResult.id;
+      }
+      
+      const activityContent = documentId 
+        ? `${data.content}\n\n[Attached document: ${data.file?.name}]`
+        : data.content;
+      
       const res = await fetch(`/api/engagements/${id}/timeline`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(data)
+        body: JSON.stringify({ type: data.type, content: activityContent })
       });
       if (!res.ok) throw new Error("Failed to add activity");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "timeline"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/engagements", id, "documents"] });
       setIsAddActivityOpen(false);
       setNewActivityType("InternalNote");
       setNewActivityContent("");
+      setActivityAttachment(null);
       toast({ title: "Activity Added" });
     },
     onError: (err: any) => {
@@ -1058,99 +1083,154 @@ export default function EngagementDetail() {
 
         <TabsContent value="timeline">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Engagement Timeline</CardTitle>
-                <CardDescription>Activity history and communications log</CardDescription>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Select value={timelineTypeFilter} onValueChange={setTimelineTypeFilter}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Filter by type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Activities</SelectItem>
-                    {userActivityTypes.map(t => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="flex items-center gap-1">
-                  <Input
-                    type="date"
-                    value={timelineStartDate}
-                    onChange={(e) => setTimelineStartDate(e.target.value)}
-                    className="w-36"
-                    placeholder="Start date"
-                    data-testid="input-timeline-start-date"
-                  />
-                  <span className="text-muted-foreground">to</span>
-                  <Input
-                    type="date"
-                    value={timelineEndDate}
-                    onChange={(e) => setTimelineEndDate(e.target.value)}
-                    className="w-36"
-                    placeholder="End date"
-                    data-testid="input-timeline-end-date"
-                  />
-                  {(timelineStartDate || timelineEndDate) && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setTimelineStartDate("");
-                        setTimelineEndDate("");
-                      }}
-                    >
-                      Clear
-                    </Button>
-                  )}
-                </div>
-                {canEditTimeline && (
-                  <Dialog open={isAddActivityOpen} onOpenChange={setIsAddActivityOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" data-testid="button-add-activity">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Activity
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Add Timeline Entry</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label>Activity Type</Label>
-                          <Select value={newActivityType} onValueChange={setNewActivityType}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {userActivityTypes.map(t => (
-                                <SelectItem key={t} value={t}>{t}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Content</Label>
-                          <Textarea 
-                            value={newActivityContent} 
-                            onChange={e => setNewActivityContent(e.target.value)}
-                            placeholder="Describe the activity..."
-                            rows={4}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button
-                          onClick={() => addActivityMutation.mutate({ type: newActivityType, content: newActivityContent })}
-                          disabled={!newActivityContent.trim() || addActivityMutation.isPending}
-                        >
+            <CardHeader className="space-y-4">
+              <div className="flex flex-row items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <CardTitle>Engagement Timeline</CardTitle>
+                    <CardDescription>Activity history and communications log</CardDescription>
+                  </div>
+                  {canEditTimeline && (
+                    <Dialog open={isAddActivityOpen} onOpenChange={(open) => {
+                      setIsAddActivityOpen(open);
+                      if (!open) {
+                        setActivityAttachment(null);
+                        setNewActivityContent("");
+                        setNewActivityType("InternalNote");
+                      }
+                    }}>
+                      <DialogTrigger asChild>
+                        <Button size="lg" className="h-12 px-6 text-base font-semibold" data-testid="button-add-activity">
+                          <Plus className="mr-2 h-5 w-5" />
                           Add Activity
                         </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                )}
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[500px]">
+                        <DialogHeader>
+                          <DialogTitle>Add Timeline Entry</DialogTitle>
+                          <DialogDescription>Create a new activity entry with optional document attachment</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label>Activity Type</Label>
+                            <Select value={newActivityType} onValueChange={setNewActivityType}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {userActivityTypes.map(t => (
+                                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Content</Label>
+                            <Textarea 
+                              value={newActivityContent} 
+                              onChange={e => setNewActivityContent(e.target.value)}
+                              placeholder="Describe the activity..."
+                              rows={4}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Attach Document (Optional)</Label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="file"
+                                ref={activityFileInputRef}
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) setActivityAttachment(file);
+                                }}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => activityFileInputRef.current?.click()}
+                                className="flex-1"
+                              >
+                                <Upload className="mr-2 h-4 w-4" />
+                                {activityAttachment ? activityAttachment.name : "Choose File"}
+                              </Button>
+                              {activityAttachment && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setActivityAttachment(null)}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                            {activityAttachment && (
+                              <p className="text-xs text-muted-foreground">
+                                {(activityAttachment.size / 1024).toFixed(1)} KB
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button
+                            onClick={() => addActivityMutation.mutate({ 
+                              type: newActivityType, 
+                              content: newActivityContent,
+                              file: activityAttachment 
+                            })}
+                            disabled={!newActivityContent.trim() || addActivityMutation.isPending}
+                            size="lg"
+                          >
+                            {addActivityMutation.isPending ? "Adding..." : "Add Activity"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Select value={timelineTypeFilter} onValueChange={setTimelineTypeFilter}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Filter by type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Activities</SelectItem>
+                      {userActivityTypes.map(t => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="date"
+                      value={timelineStartDate}
+                      onChange={(e) => setTimelineStartDate(e.target.value)}
+                      className="w-36"
+                      placeholder="Start date"
+                      data-testid="input-timeline-start-date"
+                    />
+                    <span className="text-muted-foreground">to</span>
+                    <Input
+                      type="date"
+                      value={timelineEndDate}
+                      onChange={(e) => setTimelineEndDate(e.target.value)}
+                      className="w-36"
+                      placeholder="End date"
+                      data-testid="input-timeline-end-date"
+                    />
+                    {(timelineStartDate || timelineEndDate) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setTimelineStartDate("");
+                          setTimelineEndDate("");
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
